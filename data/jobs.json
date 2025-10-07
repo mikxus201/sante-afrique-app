@@ -1,0 +1,112 @@
+[
+  {
+    "id": 1,
+    "title": "Infirmier·ère scolaire",
+    "company": "Fondation Santé+",
+    "type": "CDD",
+    "location": "Abidjan, Côte d’Ivoire",
+    "country": "Côte d’Ivoire",
+    "publishedAt": "2025-08-20T09:00:00Z",
+    "excerpt": "Suivi de la santé des élèves, sensibilisation, premiers secours.",
+    "applyUrl": "/offres/1"
+  },
+  {
+    "id": 2,
+    "title": "Responsable vaccination (EPI)",
+    "company": "Ministère de la Santé",
+    "type": "CDI",
+    "location": "Dakar, Sénégal",
+    "country": "Sénégal",
+    "publishedAt": "2025-08-18T08:00:00Z",
+    "excerpt": "Coordination des campagnes et supervision des équipes.",
+    "applyUrl": "/offres/2"
+  },
+  {
+    "id": 3,
+    "title": "Chef·fe de projet Nutrition",
+    "company": "ONG NutriCare",
+    "type": "CDI",
+    "location": "Cotonou, Bénin",
+    "country": "Bénin",
+    "publishedAt": "2025-08-15T10:00:00Z",
+    "excerpt": "Pilotage de projets communautaires en nutrition materno-infantile.",
+    "applyUrl": "/offres/3"
+  },
+  {
+    "id": 4,
+    "title": "Data Analyst Santé",
+    "company": "HealthLab",
+    "type": "Stage",
+    "location": "Yaoundé, Cameroun",
+    "country": "Cameroun",
+    "publishedAt": "2025-08-10T10:00:00Z",
+    "excerpt": "Analyses de données sanitaires, tableaux de bord.",
+    "applyUrl": "/offres/4"
+  },
+  {
+    "id": 5,
+    "title": "Sage-femme",
+    "company": "Clinique Maternité Lumière",
+    "type": "CDI",
+    "location": "Bamako, Mali",
+    "country": "Mali",
+    "publishedAt": "2025-08-05T10:00:00Z",
+    "excerpt": "Suivi prénatal et accompagnement à l’accouchement.",
+    "applyUrl": "/offres/5"
+  },
+  {
+    "id": 6,
+    "title": "Responsable laboratoire",
+    "company": "Hôpital Régional",
+    "type": "CDD",
+    "location": "Ouagadougou, Burkina Faso",
+    "country": "Burkina Faso",
+    "publishedAt": "2025-08-01T10:00:00Z",
+    "excerpt": "Management du labo, qualité et biosécurité.",
+    "applyUrl": "/offres/6"
+  },
+  {
+    "id": 7,
+    "title": "Coordinateur·rice One Health",
+    "company": "Programme International",
+    "type": "CDI",
+    "location": "Kigali, Rwanda",
+    "country": "Rwanda",
+    "publishedAt": "2025-07-28T10:00:00Z",
+    "excerpt": "Interface santé humaine/animale/environnement.",
+    "applyUrl": "/offres/7"
+  },
+  {
+    "id": 8,
+    "title": "Psychologue clinicien·ne",
+    "company": "Centre Bien-Être",
+    "type": "CDD",
+    "location": "Libreville, Gabon",
+    "country": "Gabon",
+    "publishedAt": "2025-07-24T10:00:00Z",
+    "excerpt": "Prises en charge individuelles et groupes de parole.",
+    "applyUrl": "/offres/8"
+  },
+  {
+    "id": 9,
+    "title": "Chargé·e de communication santé",
+    "company": "Agence Santé Publique",
+    "type": "CDI",
+    "location": "Niamey, Niger",
+    "country": "Niger",
+    "publishedAt": "2025-07-18T10:00:00Z",
+    "excerpt": "Campagnes d’information et réseaux sociaux.",
+    "applyUrl": "/offres/9"
+  },
+  {
+    "id": 10,
+    "title": "Épidémiologiste junior",
+    "company": "Observatoire Santé",
+    "type": "Stage",
+    "location": "Casablanca, Maroc",
+    "country": "Maroc",
+    "publishedAt": "2025-07-10T10:00:00Z",
+    "excerpt": "Surveillance, investigations et analytics.",
+    "applyUrl": "/offres/10"
+  }
+]

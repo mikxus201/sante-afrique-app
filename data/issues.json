@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "title": "Communautés & courage : agir au plus près",
+    "excerpt": "Dossier spécial : comment les approches de terrain transforment les soins.",
+    "image": "/covers/issue-01.jpg",
+    "thumb": "/thumbs/issue-01.jpg"
+  },
+  {
+    "id": 2,
+    "title": "Nutrition familiale : les bases d’une croissance saine",
+    "excerpt": "Focus : alimentation, éducation et prévention pour toute la famille.",
+    "image": "/covers/issue-02.jpg",
+    "thumb": "/thumbs/issue-02.jpg"
+  },
+  {
+    "id": 3,
+    "title": "Urgences & résilience : soigner en contexte fragile",
+    "excerpt": "Reportages : les défis du quotidien et les solutions qui marchent.",
+    "image": "/covers/issue-03.jpg",
+    "thumb": "/thumbs/issue-03.jpg"
+  }
+]

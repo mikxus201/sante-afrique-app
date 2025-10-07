@@ -1,0 +1,13 @@
+[
+  { "slug": "sante-maternelle",   "label": "Santé Maternelle" },
+  { "slug": "sante-nutrition-infantile","label": "Santé & Nutrition Infantile" },
+  { "slug": "vaccination",        "label": "Vaccination" },
+  { "slug": "bien-etre-mental",   "label": "Santé-Mental" },
+  { "slug": "Conseils-pratiques","label": "Conseils-pratiques" },
+  { "slug": "actualites",    "label": "Actualités" },
+  { "slug": "dossier",    "label": "Dossier" },
+  { "slug": "equite-acces-produits-sante",    "label": "Équité & Accès aux produits de santé" },
+  { "slug": "les-odd",    "label": "Les ODD" },
+  { "slug": "business-sante",    "label": "Business Santé" },
+  { "slug": "one-health",    "label": "One Health" }
+]

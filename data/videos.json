@@ -1,0 +1,23 @@
+[
+  {
+    "id": "v-001",
+    "title": "Entretien Santé Afrique",
+    "youtubeId": "HlTjckPMqSA",
+    "thumbnail": "/videos/v-001.jpg",
+    "publishedAt": "2025-09-01T09:00:00Z"
+  },
+  {
+    "id": "v-002",
+    "title": "Vaccination : le point",
+    "youtubeId": "-biY0FF402Y",
+    "thumbnail": "/videos/v-002.jpg",
+    "publishedAt": "2025-09-01T08:00:00Z"
+  },
+  {
+    "id": "v-003",
+    "title": "Stress : 5 clés",
+    "youtubeId": "3JZ_D3ELwOQ",
+    "thumbnail": "/videos/v-003.jpg",
+    "publishedAt": "2025-08-30T18:00:00Z"
+  }
+]
