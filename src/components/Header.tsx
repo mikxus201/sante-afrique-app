@@ -229,6 +229,7 @@ export default function Header() {
           <nav className="hidden sm:flex items-center justify-start text-[15px] divide-x divide-neutral-200">
             <Link href="/" className="hover:underline px-3">Accueil</Link>
             <Link href="/offres-emploi" className="hover:underline px-3">Offres d’emploi</Link>
+            <Link href="/partenaires" className="hover:underline px-3">Espace Partenaires</Link>
           </nav>
 
           {/* LOGO */}

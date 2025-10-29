@@ -42,7 +42,7 @@ export default function Footer() {
           <h3 className="text-neutral-400 font-semibold uppercase tracking-wide mb-3">Services</h3>
           <ul className="space-y-2">
             <li>
-              <Link href="/offres-emploi?mode=poster" className="hover:text-white">
+              <Link href="/offres-emploi/poster" className="hover:text-white">
                 Poster une Offre d’emploi
               </Link>
             </li>
@@ -101,7 +101,7 @@ export default function Footer() {
               </Link>
             </li>
             <li>
-              <Link href="/contact" className="hover:text-white">
+              <Link href="/nous-contacter" className="hover:text-white">
                 Nous contacter
               </Link>
             </li>
@@ -192,7 +192,7 @@ export default function Footer() {
         {/* Réseaux sociaux */}
         <div className="flex items-center gap-4">
           <Link
-            href="https://facebook.com"
+            href="https://https://www.facebook.com/profile.php?id=61564168631404"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Facebook"
@@ -201,7 +201,7 @@ export default function Footer() {
             <Facebook size={18} />
           </Link>
           <Link
-            href="https://youtube.com"
+            href="https://https://www.youtube.com/@pharmaconsults-expertise5941"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="YouTube"
@@ -210,7 +210,7 @@ export default function Footer() {
             <Youtube size={18} />
           </Link>
           <Link
-            href="https://linkedin.com"
+            href="https://https://www.linkedin.com/company/santeafrique/?viewAsMember=true"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="LinkedIn"

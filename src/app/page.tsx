@@ -1,5 +1,6 @@
 // src/app/page.tsx
 import Link from "next/link";
+import { getJSON } from "@/lib/api";
 
 // Composants existants
 import HeroSlider from "../components/HeroSlider";
@@ -117,7 +118,6 @@ function pickCategory(a: any): string {
   return toText(src);
 }
 
-
 /** Transforme un article en card pour PairStrip (avec fallback image) */
 function toItem(a: Article) {
   return {
@@ -139,16 +139,17 @@ export const metadata = {
 // ---------- Page (Server Component) ----------
 export default async function HomePage() {
   // --- Récupération API Laravel (robuste aux réponses HTML) ---
-  const url = apiUrl("/articles");
-  const res = await fetch(url, {
+  // Articles
+  const articlesUrl = apiUrl("/articles");
+  const articlesRes = await fetch(articlesUrl, {
     headers: { Accept: "application/json" },
     cache: "no-store", // en dev; passe en ISR (revalidate) plus tard si besoin
   });
 
-  const raw = await res.text();
+  const raw = await articlesRes.text();
   if (/^\s*<!doctype html>|^\s*<html/i.test(raw)) {
     throw new Error(
-      `L'API a renvoyé du HTML. Vérifie NEXT_PUBLIC_API_URL et que Laravel tourne : ${url}`
+      `L'API a renvoyé du HTML. Vérifie NEXT_PUBLIC_API_URL et que Laravel tourne : ${articlesUrl}`
     );
   }
 
@@ -162,63 +163,99 @@ export default async function HomePage() {
   // L’index Laravel renvoie un paginator { data: [...] } ou un tableau
   const all: Article[] = Array.isArray(payload) ? payload : payload?.data ?? [];
 
+  // ---------- HERO Slides (depuis /api/hero-slides) ----------
+  let heroSlides: { src?: string | null; title: string; href?: string }[] = [];
+  try {
+    const hsUrl = apiUrl("/hero-slides");
+    const hsRes = await fetch(hsUrl, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    const hsText = await hsRes.text();
+    if (!/^\s*<!doctype html>|^\s*<html/i.test(hsText)) {
+      const hsJson = JSON.parse(hsText);
+      const items = Array.isArray(hsJson) ? hsJson : hsJson?.items ?? [];
+      heroSlides = items
+        .map((s: any) => ({
+          src: toPublicImageUrl(s.image_url ?? s.src ?? null),
+          title: String(s.title ?? "").trim(),
+          href: s.link_url ?? s.href ?? undefined,
+        }))
+        .filter((s: any) => s.title && s.src);
+    }
+  } catch {
+    // silencieux : on utilisera les fallbacks
+  }
+
+  // Fallback local si pas de slides en base
+  if (!heroSlides.length) {
+    heroSlides = [
+      { src: "/heroes/slide-01.jpg", title: "Prévenir, comprendre, agir", href: "/magazine" },
+      {
+        src: "/heroes/slide-02.jpg",
+        title: "Nutrition & enfance : le guide essentiel",
+        href: "/rubriques/sante-et-nutrition-infantile",
+      },
+      {
+        src: "/heroes/slide-03.jpg",
+        title: "Vaccination : dossiers et bonnes pratiques",
+        href: "/rubriques/vaccination",
+      },
+      {
+        src: "/heroes/slide-04.jpg",
+        title: "Bien-être mental : nos conseils",
+        href: "/rubriques/bien-etre-mental",
+      },
+      { src: "/heroes/slide-05.jpg", title: "One Health : une seule santé", href: "/rubriques/one-health" },
+    ];
+  }
+
   // ---------- Sections ----------
-  // À la une (featured d’abord, puis le reste par date)
-  const featuredFirst = all.filter((a) => !!a.featured).sort(byDateDesc);
-  const nonFeatured = all.filter((a) => !a.featured).sort(byDateDesc);
-  const aLaUne = [...featuredFirst, ...nonFeatured].slice(0, 9);
+// À la une (featured d’abord, puis le reste par date)
+const featuredFirst = all.filter((a) => !!a.featured).sort(byDateDesc);
+const nonFeatured   = all.filter((a) => !a.featured).sort(byDateDesc);
+const aLaUne        = [...featuredFirst, ...nonFeatured].slice(0, 9);
 
-  // Les plus lus (si views dispo, sinon ordre chronologique)
-  const mostRead = (
-    all.some((a) => a.views != null) ? [...all].sort(byViewsDesc) : [...all].sort(byDateDesc)
-  ).slice(0, 9);
+// Ensemble d’IDs à exclure (stringifiés)
+const aLaUneIds = new Set(aLaUne.map((a) => String(a.id)));
 
-  // Catégories pour les bandes du bas (fiables même avec section/rubrique)
-  const byCat = (name: string) =>
-    all
-      .filter((a) => pickCategory(a).toLowerCase().includes(name))
-      .sort(byDateDesc);
+// Les plus lus (si views dispo, sinon ordre chronologique)
+const mostRead = (
+  all.some((a) => a.views != null) ? [...all].sort(byViewsDesc) : [...all].sort(byDateDesc)
+).slice(0, 9);
 
-  const dossiers = byCat("dossier").slice(0, 12);
-  const interviews = byCat("interview").slice(0, 12);
-  const tribunes = byCat("tribune").slice(0, 12);
+// ---------- Catégories (fiables même avec section/rubrique)
+const byCat = (name: string) =>
+  all.filter((a) => pickCategory(a).toLowerCase().includes(name)).sort(byDateDesc);
 
-  const fallback = [...all].sort(byDateDesc);
-  const dossiersSafe = dossiers.length ? dossiers : fallback.slice(6, 18);
-  const interviewsSafe = interviews.length ? interviews : fallback.slice(18, 30);
-  const tribunesSafe = tribunes.length ? tribunes : fallback.slice(30, 42);
+// Garantir 1 → 3 articles si possible
+function top1to3(source: Article[], fallbackPool: Article[], offsetSeed = 0) {
+  const list = source.slice(0, 3);
+  if (list.length >= 1) return list;
+  const pool = fallbackPool.filter((a) => !aLaUneIds.has(String(a.id)));
+  return pool.slice(offsetSeed, offsetSeed + 1);
+}
 
-  // Autres (évite de dupliquer ceux “à la une”)
-  const aLaUneIds = new Set(aLaUne.map((a) => a.id));
-  const others = fallback.filter((a) => !aLaUneIds.has(a.id)).slice(0, 18);
+const dossiersRaw   = byCat("dossier");
+const interviewsRaw = byCat("interview");
+const tribunesRaw   = byCat("tribune");
+
+const fallbackAll   = [...all].sort(byDateDesc);
+
+// 1 → 3 items par section
+const dossiersTop   = top1to3(dossiersRaw,   fallbackAll, 6);
+const interviewsTop = top1to3(interviewsRaw, fallbackAll, 12);
+const tribunesTop   = top1to3(tribunesRaw,   fallbackAll, 18);
+
+// Autres (éviter ceux “à la une”)
+const others = fallbackAll.filter((a) => !aLaUneIds.has(String(a.id))).slice(0, 18);
 
   // ---------- Rendu ----------
   return (
     <div className="space-y-10">
-      {/* ===== HERO ===== */}
+      {/* ===== HERO (dynamique depuis API, avec fallback local) ===== */}
       <div className="mx-auto max-w-[1800px] px-4 pt-6">
-        <HeroSlider
-          slides={[
-            { src: "/heroes/slide-01.jpg", title: "Prévenir, comprendre, agir", href: "/magazine" },
-            {
-              src: "/heroes/slide-02.jpg",
-              title: "Nutrition & enfance : le guide essentiel",
-              href: "/rubriques/sante-et-nutrition-infantile",
-            },
-            {
-              src: "/heroes/slide-03.jpg",
-              title: "Vaccination : dossiers et bonnes pratiques",
-              href: "/rubriques/vaccination",
-            },
-            {
-              src: "/heroes/slide-04.jpg",
-              title: "Bien-être mental : nos conseils",
-              href: "/rubriques/bien-etre-mental",
-            },
-            { src: "/heroes/slide-05.jpg", title: "One Health : une seule santé", href: "/rubriques/one-health" },
-          ]}
-          aspect="aspect-[16/5]"
-        />
+        <HeroSlider slides={heroSlides} aspect="aspect-[16/5]" />
       </div>
 
       {/* ===== CONTENU (colonne + sidebar) ===== */}
@@ -226,7 +263,7 @@ export default async function HomePage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,320px] gap-8">
           {/* === COLONNE CONTENU === */}
           <div className="space-y-10">
-            {/* PUB TOP — 970x170 */}
+            {/* PUB TOP — 970x170 (pilotée back via AdSlot) */}
             <div className="flex justify-center">
               <AdSlot
                 id="top-970x170"
@@ -246,14 +283,14 @@ export default async function HomePage() {
               bigVariant="image-left"
             />
 
-            {/* PUB IN-CONTENT — 370x135 */}
+            {/* PUB IN-CONTENT — 370x135 (pilotée back via AdSlot) */}
             <div className="flex justify-center">
               <AdSlot
                 id="incontent-370x135"
-                width={970}
-                height={270}
+                width={1400}
+                height={450}
                 imgSrc="/ads/incontent-370x135.jpg"
-                className="w-full max-w-[970px]"
+                className="w-full max-w-[1400px]"
               />
             </div>
 
@@ -268,20 +305,23 @@ export default async function HomePage() {
             />
 
             {/* ——— Vidéos ——— */}
-            <VideoRail
-              title="Vidéos"
-              videos={[
-                // Remplace par tes sources réelles si tu en as (YouTube IDs, etc.)
-                { id: "v1", title: "Prévention & santé", youtubeId: "dQw4w9WgXcQ", thumbnail: "/videos/thumb-01.jpg", publishedAt: "2025-01-10" },
-                { id: "v2", title: "Conseils nutrition", youtubeId: "tAGnKpE4NCI", thumbnail: "/videos/thumb-02.jpg", publishedAt: "2025-01-05" },
-                { id: "v3", title: "One Health expliqué", youtubeId: "9bZkp7q19f0", thumbnail: "/videos/thumb-03.jpg", publishedAt: "2025-01-01" },
-              ]}
-            />
+            {/* Pas de prop `videos` => VideoRail va auto-fetch /api/videos */}
+            <VideoRail title="Vidéos" />
 
-            {/* ——— Bandes thématiques ——— */}
-            <PairStrip title="Dossiers"    items={dossiersSafe.map(toItem)}   seeAllHref="/dossiers"   cols={3} />
-            <PairStrip title="Interviews"  items={interviewsSafe.map(toItem)} seeAllHref="/interviews" cols={3} />
-            <PairStrip title="Tribune"     items={tribunesSafe.map(toItem)}   seeAllHref="/tribunes"   cols={3} />
+             {/* Sidebar Half Page — sidebar-300x600 */}
+             <div className="flex justify-center">
+            <AdSlot
+              id="sidebar-300x600"
+              width={720}
+              height={600}
+              imgSrc="/ads/sidebar-300x600.jpg"
+              className="w-full" /></div>
+
+            {/* ——— Bandes thématiques (1 à 3 items) ——— */}
+              <PairStrip title="Dossiers"   items={dossiersTop.map(toItem)}   seeAllHref="/dossiers"   cols={3} />
+              <PairStrip title="Interviews" items={interviewsTop.map(toItem)} seeAllHref="/interviews" cols={3} />
+              <PairStrip title="Tribunes"   items={tribunesTop.map(toItem)}   seeAllHref="/tribunes"   cols={3} />
+
 
             {/* ——— Autres articles ——— */}
             <PairStrip
@@ -302,13 +342,13 @@ export default async function HomePage() {
               </Link>
             </div>
 
-            {/* Emplacement pub sidebar 300x250 */}
+            {/* Emplacement pub sidebar 300x250 (pilotée back via AdSlot) */}
             <AdSlot
-              id="sidebar-300x250"
-              width={1070}
-              height={270}
-              imgSrc="/ads/sidebar-300x250.jpg"
-              className="w-full"
+              id="footer-970x90"
+            width={1150}
+            height={270}
+            imgSrc="/ads/footer-970x90.jpg"
+            className="w-full max-w-[1150px]"
             />
           </aside>
         </div>

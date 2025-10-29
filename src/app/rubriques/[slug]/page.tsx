@@ -9,15 +9,18 @@ import { fetchArticlesBySectionSlug, slugify } from "@/lib/api";
 
 /* ---------- Types internes ---------- */
 type PageProps = {
-  params: { slug: string };
-  searchParams: Record<string, string | string[] | undefined>;
+  // ✅ Next 15: ces props arrivent comme Promises
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 /* ---------- SEO ---------- */
-export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
-  const raw = params.slug;
-  const norm = slugify(raw);
-  const page = Number(searchParams.page ?? 1);
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const { slug } = await props.params;              // ✅ await
+  const sp = await props.searchParams;              // ✅ await
+
+  const norm = slugify(slug);
+  const page = Number(sp.page ?? 1);
   const titleName = norm.replace(/-/g, " ");
   const title = `${titleName} | Santé Afrique`;
   const site = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
@@ -27,16 +30,26 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
     title,
     description: `Tous les articles de la rubrique “${titleName}”. Page ${page}.`,
     alternates: { canonical },
-    openGraph: { title, description: `Tous les articles de la rubrique “${titleName}”. Page ${page}.`, url: canonical, siteName: "Santé Afrique", type: "website" },
-    twitter: { card: "summary_large_image", title, description: `Tous les articles de la rubrique “${titleName}”. Page ${page}.` },
+    openGraph: {
+      title,
+      description: `Tous les articles de la rubrique “${titleName}”. Page ${page}.`,
+      url: canonical,
+      siteName: "Santé Afrique",
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description: `Tous les articles de la rubrique “${titleName}”. Page ${page}.`,
+    },
   };
 }
 
 /* ---------- Helpers ---------- */
-function getQP(sp: PageProps["searchParams"]) {
+function getQP(sp: Record<string, string | string[] | undefined>) {
   const page = Math.max(1, Number(sp.page ?? 1));
   const perPage = Math.max(1, Number(sp.perPage ?? 12));
-  const order = (String(sp.order ?? "recent") as "recent" | "popular");
+  const order = String(sp.order ?? "recent") as "recent" | "popular";
   return { page, perPage, order };
 }
 function pageHref(base: string, page: number, order: string) {
@@ -44,20 +57,23 @@ function pageHref(base: string, page: number, order: string) {
 }
 
 /* ---------- Page ---------- */
-export default async function RubriquePage({ params, searchParams }: PageProps) {
+export default async function RubriquePage(props: PageProps) {
+  const { slug } = await props.params;                  // ✅ await
+  const sp = await props.searchParams;                  // ✅ await
+
   // 1) Slug reçu dans l’URL (peut être "Les Odd", "LES-ODD", etc.)
-  const rawSlug = decodeURIComponent(params.slug ?? "");
+  const rawSlug = decodeURIComponent(slug ?? "");
   // 2) Slug canonique utilisé pour l’API et pour les liens internes
   const normSlug = slugify(rawSlug);
 
-  const { page, perPage, order } = getQP(searchParams);
+  const { page, perPage, order } = getQP(sp);
 
   // 3) Appels API toujours avec le slug normalisé
   const res = await fetchArticlesBySectionSlug(normSlug, { page, perPage, order });
 
   // 4) Normalisation des items
-  const rawItems: any[] = Array.isArray(res?.items)
-    ? res.items
+  const rawItems: any[] = Array.isArray((res as any)?.items)
+    ? (res as any).items
     : Array.isArray((res as any)?.data)
     ? (res as any).data
     : [];
@@ -73,9 +89,7 @@ export default async function RubriquePage({ params, searchParams }: PageProps) 
   const titleName = normSlug.replace(/-/g, " ");
   const basePath = `/rubriques/${encodeURIComponent(normSlug)}`;
   const hasPrev = page > 1;
-  const hasNext = res?.total ? page * perPage < Number(res.total) : items.length === perPage;
-
-  // … le reste de ton rendu JSX reste inchangé
+  const hasNext = (res as any)?.total ? page * perPage < Number((res as any).total) : items.length === perPage;
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">

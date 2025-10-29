@@ -31,6 +31,12 @@ export default function IssuesRail({ title = "Numéros récents" }: { title?: st
                   Lire dans l’app
                 </Link>
                 <Link
+                   href={`/magazine/${m.id}/sommaire`}
+                    className="inline-flex items-center rounded border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100"
+    >
+                    Sommaire
+               </Link>
+                <Link
                   href="/abonnement"
                   className="inline-flex items-center rounded border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100"
                 >

@@ -41,9 +41,7 @@ type Paginator<T> = {
 /* =========== Helpers URL/Images =========== */
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
 const apiRoot = () =>
-  trimSlash(
-    (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api$/i, "")
-  );
+  trimSlash((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api$/i, ""));
 const isAbs = (u: string) => /^https?:\/\//i.test(u);
 
 function toPublicImageUrl(raw?: string | null): string | null {
@@ -79,9 +77,41 @@ function pickImage(a: Article): string | null {
   );
 }
 
-function pickCategory(a: Article): string {
-  return (a.category || a.section?.name || a.rubrique?.name || "") as string;
+/** Catégorie robuste quel que soit le format (string/objet/tableau) */
+function pickCategory(a: any): string {
+  const src =
+    a?.category ??
+    a?.section ??
+    a?.rubrique ??
+    a?.category_name ??
+    a?.section_name ??
+    a?.rubrique_name ??
+    null;
+
+  const toText = (v: any): string => {
+    if (!v) return "";
+    if (typeof v === "string") return v;
+    if (Array.isArray(v)) return toText(v[0]);
+    if (typeof v === "object") {
+      const cand =
+        v.name ??
+        v.label ??
+        v.title ??
+        v.slug ??
+        Object.values(v).find((x) => typeof x === "string") ??
+        "";
+      return String(cand);
+    }
+    return String(v);
+  };
+
+  return toText(src);
 }
+
+/* =========== Tri fallback (si tableau brut) =========== */
+const byDateDesc = (a: Article, b: Article) =>
+  new Date(b.published_at ?? 0).getTime() - new Date(a.published_at ?? 0).getTime();
+const byViewsDesc = (a: Article, b: Article) => (b.views ?? 0) - (a.views ?? 0);
 
 /* =========== Fetchers =========== */
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -94,6 +124,11 @@ async function fetchJSON<T>(url: string): Promise<T> {
 
 const apiUrl = (p: string) => `${apiRoot()}/api${p.startsWith("/") ? "" : "/"}${p}`;
 
+/**
+ * Essaie d'utiliser la pagination back.
+ * Si l'API renvoie un tableau brut, on filtre/tri/page côté front
+ * pour exposer le même shape Paginator<T>.
+ */
 async function fetchArticles(params: {
   page: number;
   sort: string;
@@ -103,10 +138,52 @@ async function fetchArticles(params: {
   const q = new URLSearchParams();
   q.set("page", String(params.page));
   q.set("sort", params.sort === "views" ? "views" : "date");
-  q.set("category", CATEGORY);
+  q.set("category", CATEGORY); // si supporté par le back
   if (params.q) q.set("search", params.q);
-  q.set("perPage", String(params.perPage ?? 12));
-  return fetchJSON<Paginator<Article>>(apiUrl(`/articles?${q.toString()}`));
+  const perPage = Number(params.perPage ?? 12);
+  q.set("perPage", String(perPage));
+
+  const url = apiUrl(`/articles?${q.toString()}`);
+  const payload: any = await fetchJSON<any>(url);
+
+  // Cas 1: paginator Laravel
+  if (payload && Array.isArray(payload.data) && typeof payload.current_page !== "undefined") {
+    return payload as Paginator<Article>;
+  }
+
+  // Cas 2: tableau brut => on reconstruit un paginator compatible
+  const all: Article[] = Array.isArray(payload) ? payload : (payload?.items ?? payload?.data ?? []);
+  const needle = "interview"; // match en minuscules, forme singulière
+  const filtered = all.filter((a) => pickCategory(a).toLowerCase().includes(needle));
+  const sorted = params.sort === "views" ? [...filtered].sort(byViewsDesc) : [...filtered].sort(byDateDesc);
+
+  const total = sorted.length;
+  const last_page = Math.max(1, Math.ceil(total / perPage));
+  const current_page = Math.min(Math.max(1, params.page), last_page);
+  const start = (current_page - 1) * perPage;
+  const data = sorted.slice(start, start + perPage);
+
+  const paginator: Paginator<Article> = {
+    current_page,
+    per_page: perPage,
+    total,
+    last_page,
+    data,
+    next_page_url:
+      current_page < last_page
+        ? `/interviews?page=${current_page + 1}&sort=${params.sort}${
+            params.q ? `&q=${encodeURIComponent(params.q)}` : ""
+          }`
+        : null,
+    prev_page_url:
+      current_page > 1
+        ? `/interviews?page=${current_page - 1}&sort=${params.sort}${
+            params.q ? `&q=${encodeURIComponent(params.q)}` : ""
+          }`
+        : null,
+  };
+
+  return paginator;
 }
 
 /* =========== SEO =========== */
@@ -182,52 +259,45 @@ export default async function InterviewsPage({
         </Link>
       </div>
 
-      {paginator.data.length === 0 ? (
-        <div className="text-sm text-neutral-500">
-          Aucune interview trouvée (vérifie le nom exact “{CATEGORY}”).
+           {paginator.data.map((a) => {
+        const img = pickImage(a);
+        const catText = pickCategory(a); // ← string sûre
+
+         return (
+         <Link
+          key={a.id}
+          href={`/articles/${a.slug}`}
+          className="group rounded-lg border border-neutral-200 overflow-hidden hover:shadow-sm transition"
+       >
+           <div className="relative w-full h-44 bg-neutral-100">
+            <SafeImage
+            src={img ?? null}
+            alt={a.title}
+            fill
+             className="object-cover group-hover:scale-[1.02] transition-transform"
+            sizes="(max-width:768px) 100vw, 33vw"
+           />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {paginator.data.map((a) => {
-            const img = pickImage(a);
-            const cat = pickCategory(a);
-            return (
-              <Link
-                key={a.id}
-                href={`/articles/${a.slug}`}
-                className="group rounded-lg border border-neutral-200 overflow-hidden hover:shadow-sm transition"
-              >
-                <div className="relative w-full h-44 bg-neutral-100">
-                  <SafeImage
-                    src={img ?? null}
-                    alt={a.title}
-                    fill
-                    className="object-cover group-hover:scale-[1.02] transition-transform"
-                    sizes="(max-width:768px) 100vw, 33vw"
-                  />
-                </div>
-                <div className="p-3">
-                  <div className="text-xs text-neutral-500 mb-1">
-                    {cat}
-                    {a.published_at ? (
-                      <>
-                        {cat ? " • " : ""}
-                        {new Date(a.published_at).toLocaleDateString("fr-FR")}
-                      </>
-                    ) : null}
-                  </div>
-                  <h3 className="text-sm font-medium leading-snug group-hover:underline line-clamp-3">
-                    {a.title}
-                  </h3>
-                  {a.excerpt ? (
-                    <p className="mt-1 text-xs text-neutral-600 line-clamp-2">{a.excerpt}</p>
-                  ) : null}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+        <div className="p-3">
+          <div className="text-xs text-neutral-500 mb-1">
+          {catText}
+          {a.published_at ? (
+            <>
+              {catText ? " • " : ""}
+              {new Date(a.published_at).toLocaleDateString("fr-FR")}
+                </>
+              ) : null}
+             </div>
+              <h3 className="text-sm font-medium leading-snug group-hover:underline line-clamp-3">
+             {a.title}
+             </h3>
+              {a.excerpt ? (
+               <p className="mt-1 text-xs text-neutral-600 line-clamp-2">{a.excerpt}</p>
+            ) : null}
+           </div>
+        </Link>
+        );
+     })}
 
       {paginator.last_page > 1 && (
         <div className="mt-8 flex items-center justify-between">

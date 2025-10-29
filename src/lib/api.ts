@@ -17,7 +17,6 @@ export const API = API_ROOT;
 export function apiUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
   if (/^https?:\/\//i.test(p)) return p;
-  // ✅ corrige la coquille : on utilise bien le préfixe /api
   return `${API_PREFIX}${p}`;
 }
 
@@ -34,9 +33,9 @@ export function slugify(input: any): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
-function slugLoose(v: any): string { return slugify(v).replace(/^sante-/, ""); }
-
+function slugLoose(v: any): string {
+  return slugify(v).replace(/^sante-/, "");
+}
 function flattenVals(input: any): string[] {
   if (!input) return [];
   if (Array.isArray(input)) return input.flatMap((x) => flattenVals(x));
@@ -53,9 +52,9 @@ function flattenVals(input: any): string[] {
    ========================================================= */
 import axios from "axios";
 
-/** Axios pointe sur la RACINE Laravel (pas /api), pour supporter /api/* et /sanctum/* */
+/** Axios pointe sur la RACINE Laravel (ex: http://localhost:8000) */
 const ax = axios.create({
-  baseURL: API_ROOT,
+  baseURL: API_ROOT, // ✅ important: on cible Laravel, pas Next
   withCredentials: true,
   headers: {
     Accept: "application/json",
@@ -65,15 +64,13 @@ const ax = axios.create({
 ax.defaults.xsrfCookieName = "XSRF-TOKEN";
 ax.defaults.xsrfHeaderName = "X-XSRF-TOKEN";
 
-/** Optionnel Bearer (tests) */
+/** (optionnel) bearer local si présent */
 ax.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
     const t = localStorage.getItem("sa_token");
-    if (t) {
-      const h = (config.headers ??= {} as any);
-      if (!("Authorization" in h)) (h as any)["Authorization"] = `Bearer ${t}`;
-    }
-    // ✅ Pose explicitement X-XSRF-TOKEN si absent
+    if (t) (config.headers ??= {} as any)["Authorization"] = `Bearer ${t}`;
+
+    // Pose explicitement X-XSRF-TOKEN si absent
     const h = (config.headers ??= {} as any);
     if (!("X-XSRF-TOKEN" in h)) {
       const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
@@ -83,32 +80,49 @@ ax.interceptors.request.use((config) => {
   return config;
 });
 
-/** Prépare le cookie CSRF (obligatoire avant POST/PUT/DELETE avec Sanctum) */
-async function csrf() { await ax.get("/sanctum/csrf-cookie"); }
-
-/** GET tolérant à { params } ou params à plat */
-export async function getJSON<T = any>(
-  path: string,
-  paramsOrOpts?: Record<string, any> | { params?: Record<string, any> }
-): Promise<T> {
-  const params =
-    paramsOrOpts && typeof paramsOrOpts === "object" && "params" in (paramsOrOpts as any)
-      ? (paramsOrOpts as any).params
-      : paramsOrOpts;
-  const res = await ax.get(path, { params });
-  return res.data as T;
+// ---- CSRF lazy + retry 401/419
+let csrfReady = false;
+async function ensureCsrf() {
+  if (!csrfReady) {
+    await ax.get("/sanctum/csrf-cookie"); // baseURL = API_ROOT
+    csrfReady = true;
+  }
+}
+async function withRetry<T>(doCall: () => Promise<T>): Promise<T> {
+  try {
+    return await doCall();
+  } catch (e: any) {
+    const code = e?.response?.status;
+    if (code === 401 || code === 419) {
+      csrfReady = false;
+      await ensureCsrf();
+      return await doCall();
+    }
+    throw e;
+  }
 }
 
+/** GET (passer un chemin ABSOLU qui commence par /api/… si c’est l’API) */
+export async function getJSON<T = any>(path: string, params?: Record<string, any>): Promise<T> {
+  await ensureCsrf();
+  return withRetry(async () => {
+    const { data } = await ax.get(path, { params }); // ✅ params passés directement
+    return data as T;
+  });
+}
 export async function postJSON<T = any>(path: string, body?: any): Promise<T> {
-  await csrf();
-  const res = await ax.post(path, body ?? {});
-  return res.data as T;
+  await ensureCsrf();
+  return withRetry(async () => {
+    const { data } = await ax.post(path, body ?? {});
+    return data as T;
+  });
 }
-
 export async function putJSON<T = any>(path: string, body?: any): Promise<T> {
-  await csrf();
-  const res = await ax.put(path, body ?? {});
-  return res.data as T;
+  await ensureCsrf();
+  return withRetry(async () => {
+    const { data } = await ax.put(path, body ?? {});
+    return data as T;
+  });
 }
 
 /* =========================================================
@@ -121,7 +135,6 @@ function asArray(payload: any): any[] {
   if (Array.isArray(payload?.items)) return payload.items;
   return [];
 }
-
 function readMeta(payload: any) {
   const meta = payload?.meta || payload?.pagination || payload?.links || null;
   const total = meta?.total ?? payload?.total ?? (Array.isArray(payload?.data) && payload?.data.length) ?? null;
@@ -130,7 +143,6 @@ function readMeta(payload: any) {
   const last = meta?.last_page ?? payload?.last_page ?? (perPage && total ? Math.ceil(total / perPage) : null);
   return { total, perPage, current, last };
 }
-
 function dedupe(items: any[]) {
   const seen = new Set<string>();
   return items.filter((a) => {
@@ -151,7 +163,6 @@ export function toPublicMediaUrl(input?: string | null): string {
   const path = raw.startsWith("/") ? raw : `/${raw}`;
   return `${API_ROOT}${path}`;
 }
-
 export function pickImage(a: any): string {
   const cand =
     a?.thumbnail_url ||
@@ -176,9 +187,20 @@ export function filterBySectionSlug(items: any[], slug: string) {
   const S = slugLoose(slug);
   return items.filter((a) => {
     const cand = [
-      a?.rubric?.slug, a?.rubric?.name, a?.rubric_slug, a?.rubric,
-      a?.section?.slug, a?.category?.slug, a?.section_slug, a?.category_slug,
-      a?.rubrique_slug, a?.section?.name, a?.category?.name, a?.rubrique, a?.category, a?.section,
+      a?.rubric?.slug,
+      a?.rubric?.name,
+      a?.rubric_slug,
+      a?.rubric,
+      a?.section?.slug,
+      a?.category?.slug,
+      a?.section_slug,
+      a?.category_slug,
+      a?.rubrique_slug,
+      a?.section?.name,
+      a?.category?.name,
+      a?.rubrique,
+      a?.category,
+      a?.section,
       ...(Array.isArray(a?.sections) ? a.sections : []),
       ...(Array.isArray(a?.rubriques) ? a.rubriques : []),
       ...(Array.isArray(a?.tags)
@@ -192,15 +214,19 @@ export function filterBySectionSlug(items: any[], slug: string) {
     return flattenVals(cand).some((v) => slugLoose(v) === S);
   });
 }
-
 export function filterByAuthorSlug(items: any[], slug: string) {
   const S = slugLoose(slug);
   return items.filter((a) => {
     const single = [
-      a?.author?.slug, a?.user?.slug, a?.created_by?.slug,
-      a?.author_slug, a?.created_by_slug,
-      a?.author?.username, a?.user?.username,
-      a?.author?.name, a?.user?.name,
+      a?.author?.slug,
+      a?.user?.slug,
+      a?.created_by?.slug,
+      a?.author_slug,
+      a?.created_by_slug,
+      a?.author?.username,
+      a?.user?.username,
+      a?.author?.name,
+      a?.user?.name,
       typeof a?.author === "string" ? a.author : null,
     ];
     const multi = Array.isArray(a?.authors) ? a.authors : Array.isArray(a?.contributors) ? a.contributors : [];
@@ -220,8 +246,8 @@ export type FetchResult = {
 };
 
 function mapOrder(order?: string) {
-  if (order === "popular" || order === "most_read") return { sort: "popular" };
-  return { sort: "recent" };
+  // ✅ conforme à l’API Laravel: sort = "date" | "views"
+  return { sort: order === "popular" || order === "most_read" ? "views" : "date" };
 }
 
 /* -------- Helper: paginate & filtre quand on utilise /api/articles ------- */
@@ -237,7 +263,7 @@ async function fetchAcrossPagesAndFilter(
 
   while (collected.length < wantedPerPage) {
     const params = { ...baseParams, page, per_page: baseParams.per_page, perPage: baseParams.perPage };
-    const payload = await getJSON(basePath, { params });
+    const payload = await getJSON(basePath, params); // ✅ params direct
     const arr = asArray(payload);
     const meta = readMeta(payload);
     lastPage = meta.last ?? lastPage ?? null;
@@ -268,7 +294,7 @@ export async function fetchArticlesBySectionSlug(
     { path: `/api/sections/${encodeURIComponent(slug)}/articles`, params: { page, per_page: perPage, perPage, sort: orderParam } },
     { path: `/api/articles`, params: { section_slug: slug, page, per_page: perPage, perPage, sort: orderParam } },
     { path: `/api/articles`, params: { section: slug, page, per_page: perPage, perPage, sort: orderParam } },
-    { path: `/api/articles`, params: { rubrique: slug, page, per_page: perPage, perPage, sort: orderParam } },
+    { path: `/api/articles`, params: { rubrique: slug, page, per_page: perPage, perPage, sort: orderParam } }, // ✅ notre API
     { path: `/api/articles`, params: { category: slug, page, per_page: perPage, perPage, sort: orderParam } },
     { path: `/api/articles`, params: { page, per_page: perPage, perPage, sort: orderParam, __fallback: true } },
   ];
@@ -286,7 +312,7 @@ export async function fetchArticlesBySectionSlug(
         continue;
       }
 
-      const payload = await getJSON(t.path, { params: t.params });
+      const payload = await getJSON(t.path, t.params); // ✅ params direct
       let arr = asArray(payload);
       if (!arr.length) continue;
       if (t.path.endsWith("/api/articles")) arr = filterBySectionSlug(arr, slug);
@@ -328,7 +354,7 @@ export async function fetchArticlesByAuthorSlug(
         if (items.length) return { items, page, perPage, total: null };
         continue;
       }
-      const payload = await getJSON(t.path, { params: t.params });
+      const payload = await getJSON(t.path, t.params); // ✅ params direct
       let arr = asArray(payload);
       if (!arr.length) continue;
       if (t.path.endsWith("/api/articles")) arr = filterByAuthorSlug(arr, slug);
@@ -368,14 +394,14 @@ export type Issue = {
   cover_url?: string | null;
   pdf_url?: string | null;
 };
-
-export function pickIssueCover(a: any): string { return pickImage(a); }
+export function pickIssueCover(a: any): string {
+  return pickImage(a);
+}
 export function pickIssuePdf(a: any): string | null {
   const raw = a?.pdf_url || a?.file_url || a?.pdf || a?.file || "";
   const url = toPublicMediaUrl(raw);
   return url === "/placeholder.jpg" ? null : url;
 }
-
 function mapIssue(a: any): Issue {
   return {
     id: a?.id ?? a?.slug ?? Math.random().toString(36).slice(2),
@@ -388,9 +414,8 @@ function mapIssue(a: any): Issue {
     pdf_url: pickIssuePdf(a),
   };
 }
-
 export async function listIssues(
-  opts: { page?: number; perPage?: number; order?: "recent" | "popular" } = {},
+  opts: { page?: number; perPage?: number; order?: "recent" | "popular" } = {}
 ): Promise<Issue[]> {
   const page = Math.max(1, Number(opts.page || 1));
   const perPage = Math.max(1, Number(opts.perPage || 50));
@@ -404,7 +429,7 @@ export async function listIssues(
 
   for (const t of tries) {
     try {
-      const payload = await getJSON(t.path, { params: t.params });
+      const payload = await getJSON(t.path, t.params); // ✅ params direct
       const arr = Array.isArray(payload)
         ? payload
         : (payload as any)?.data || (payload as any)?.items || (payload as any)?.issues || [];
@@ -422,13 +447,10 @@ export async function registerAccount(payload: { name: string; email: string; pa
   return postJSON("/api/auth/register", payload);
 }
 
-/** Connexion email + mot de passe (priorité aux routes web: /auth/login) */
+/** Connexion email + mot de passe */
 export async function passwordLogin(email: string, password: string) {
-  await csrf();
-
-  // ✅ Essaie d'abord l'endpoint qui marche chez toi (/api/auth/login)
+  await ensureCsrf();
   const tries = ["/api/auth/login", "/auth/login", "/api/login", "/login"];
-
   let lastErr: any = null;
   for (const path of tries) {
     try {
@@ -438,7 +460,7 @@ export async function passwordLogin(email: string, password: string) {
       const status = e?.response?.status;
       const data = e?.response?.data;
       if (status === 403 && (data?.otp_required || data?.need_otp || data?.two_factor_required)) {
-        return data; // si ton back signale explicitement l'OTP
+        return data;
       }
       lastErr = e;
     }
@@ -449,9 +471,8 @@ export async function passwordLogin(email: string, password: string) {
 
 /** OTP : demande d’envoi (email/identifier) */
 export async function otpRequest(identifier: string) {
-  await csrf();
+  await ensureCsrf();
   const tries = ["/auth/request-otp", "/request-otp", "/api/auth/request-otp", "/api/request-otp"];
-
   let lastErr: any = null;
   for (const path of tries) {
     try {
@@ -467,21 +488,21 @@ export async function otpRequest(identifier: string) {
 
 /** OTP : vérification */
 export async function otpVerify(identifier: string, code: string) {
-  await csrf();
+  await ensureCsrf();
   const tries = [
-    "/auth/verify-otp", "/verify-otp",
-    "/api/auth/verify-otp", "/api/verify-otp",
-    // fallback : certains back combinent /login + otp
-    "/auth/login", "/login"
+    "/auth/verify-otp",
+    "/verify-otp",
+    "/api/auth/verify-otp",
+    "/api/verify-otp",
+    "/auth/login",
+    "/login",
   ];
-
   let lastErr: any = null;
   for (const path of tries) {
     try {
-      const payload =
-        path.endsWith("/login")
-          ? { email: identifier, otp: code }
-          : { identifier, code, email: identifier };
+      const payload = path.endsWith("/login")
+        ? { email: identifier, otp: code }
+        : { identifier, code, email: identifier };
       const res = await ax.post(path, payload);
       return res.data || { ok: true };
     } catch (e: any) {
@@ -492,18 +513,34 @@ export async function otpVerify(identifier: string, code: string) {
   throw new Error(data?.message || data?.error || lastErr?.message || "OTP verify: endpoint introuvable.");
 }
 
-/** Profil connecté (protégé Sanctum) */
+/* =========================================================
+   PROFIL + NEWSLETTERS (corrigé)
+   ========================================================= */
+
+/** Profil connecté (retourne null si 401) */
 export async function me() {
   try {
-    return await getJSON("/api/auth/me");
+    // 1er choix : /api/me (protégé par auth web)
+    return await getJSON("/api/me");
   } catch {
-    return null; // 401 -> non connecté
+    try {
+      // fallback utile si tu laisses /api/auth/me actif
+      return await getJSON("/api/auth/me");
+    } catch {
+      return null;
+    }
   }
 }
 
 /** Mise à jour profil */
-export async function updateMe(data: { nom?: string; prenoms?: string; phone?: string }) {
-  return postJSON("/api/me", data);
+export async function updateMe(data: {
+  nom?: string | null;
+  prenoms?: string | null;
+  phone?: string | null;
+  country?: string | null;
+  gender?: "M" | "Mme" | null;
+}) {
+  return putJSON("/api/me", data);
 }
 
 /** Abonnement courant */
@@ -527,19 +564,77 @@ export function invoicePdfUrl(id: number | string) {
   return `${API_PREFIX}/me/invoices/${id}/pdf`;
 }
 
-/** Newsletters */
-export async function listNewsletterTopics() {
-  return getJSON<{ data: Array<{ id: number; slug: string; name: string; subscribed: boolean }> }>("/api/me/newsletters");
+/* =========================================================
+   Newsletters
+   ========================================================= */
+
+/** Normalise la réponse (items[] quoi qu’il arrive) */
+function normalizeNewsletterPayload(payload: any) {
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data))  return payload.data;
+  return [];
 }
+
+/** Liste des thèmes + statut abonné */
+export async function listNewsletterTopics() {
+  const payload = await getJSON<any>("/api/me/newsletters");
+  const items = normalizeNewsletterPayload(payload) as Array<{
+    id: number; slug: string; name: string; subscribed: boolean;
+  }>;
+  return { items };
+}
+
+/**
+ * Toggle 1 thème :
+ * - on lit l’état courant
+ * - on calcule la nouvelle liste de SLUGS cochés
+ * - on envoie un PUT { topics: string[] } (conforme au back)
+ */
 export async function toggleNewsletterTopic(topic_id: number, subscribed?: boolean) {
-  return postJSON("/api/me/newsletters/toggle", { topic_id, subscribed });
+  // état actuel
+  const payload = await getJSON<any>("/api/me/newsletters");
+  const items = normalizeNewsletterPayload(payload) as Array<{
+    id: number; slug: string; subscribed: boolean;
+  }>;
+
+  const topic = items.find((t) => t.id === topic_id);
+  if (!topic) throw new Error("Topic introuvable");
+
+  const currentlyCheckedSlugs = items.filter(t => t.subscribed).map(t => t.slug);
+  const willBe = typeof subscribed === "boolean" ? subscribed : !topic.subscribed;
+
+  let nextSlugs: string[];
+  if (willBe) {
+    nextSlugs = Array.from(new Set([...currentlyCheckedSlugs, topic.slug]));
+  } else {
+    nextSlugs = currentlyCheckedSlugs.filter(s => s !== topic.slug);
+  }
+
+  // PUT attendu par ton NewsletterController@update: { topics: ['slug1','slug2'] }
+  await putJSON("/api/me/newsletters", { topics: nextSlugs });
+
+  return { subscribed: willBe };
 }
 
 /** Déconnexion (essaie /auth/logout puis /api/auth/logout) */
 export async function logoutApi() {
-  await csrf();
+  await ensureCsrf();
   const tries = ["/auth/logout", "/api/auth/logout"];
   for (const p of tries) {
-    try { await ax.post(p, {}); return; } catch {}
+    try {
+      await ax.post(p, {});
+      return;
+    } catch {}
   }
+}
+
+export async function postForm(url: string, formData: FormData, init: RequestInit = {}) {
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+    ...init,
+  });
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : {};
 }

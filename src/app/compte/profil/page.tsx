@@ -43,8 +43,12 @@ export default function ProfilPage() {
       };
       const r = await updateMe(payload);
       setUser((prev) => ({ ...(prev ?? {}), ...((r as any).data ?? {}) }));
-    } catch {
-      setErr("Échec de l’enregistrement.");
+    } catch (e: any) {
+  const msg =
+    e?.response?.data?.message ||
+    (e?.response?.status === 422 && "Certains champs sont invalides.") ||
+    "Échec de l’enregistrement.";
+     setErr(msg);
     } finally {
       setSaving(false);
     }

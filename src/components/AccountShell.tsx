@@ -6,36 +6,71 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "../lib/auth-client";
-import { me } from "@/lib/api"; // <- rehydrate si nécessaire
+import { me, getJSON, API_PREFIX } from "@/lib/api"; // rehydrate + API helper
 
 type Props = { children: React.ReactNode };
-
-const TABS = [
-  { href: "/compte", label: "Abonnement" },
-  { href: "/compte/profil", label: "Profil" },
-  { href: "/compte/newsletters", label: "Newsletters" },
-  { href: "/compte/factures", label: "Factures" },
-  { href: "/compte/moyens-de-paiement", label: "Moyens de paiement" },
-  { href: "/compte/applications", label: "Applications" },
-  { href: "/compte/cookies", label: "Cookies" },
-  { href: "/compte/faq", label: "FAQ" },
-] as const;
+type Tab = { href: string; label: string };
 
 const APP_IMAGE = "/images/app-mobile.png";
 
-function NavTabs() {
+/** Appelle l'API Laravel pour savoir si l'utilisateur peut voir la CVthèque */
+async function fetchAbilities(): Promise<{ view_candidates?: boolean }> {
+  try {
+    const res = await getJSON<{ view_candidates?: boolean }>(
+      `${API_PREFIX}/me/abilities`
+    );
+    return res ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/** Construit la liste d’onglets en ajoutant l’entrée “CVthèque” si autorisé */
+function makeTabs(canViewCandidates: boolean): Tab[] {
+  const base: Tab[] = [
+    { href: "/compte", label: "Abonnement" },
+    { href: "/compte/profil", label: "Profil" },
+    { href: "/compte/newsletters", label: "Newsletters" },
+    { href: "/compte/candidatures", label: "Candidatures reçues" },
+    { href: "/compte/factures", label: "Factures" },
+    { href: "/compte/moyens-de-paiement", label: "Moyens de paiement" },
+    { href: "/compte/applications", label: "Applications" },
+    { href: "/compte/cookies", label: "Cookies" },
+    { href: "/compte/faq", label: "FAQ" },
+  ];
+
+  return canViewCandidates
+    ? [
+        ...base.slice(0, 4),
+        { href: "/compte/cvtheque", label: "CVthèque candidats" },
+        ...base.slice(4),
+      ]
+    : base;
+}
+
+/** Nav Tabs : rendu “neutre” avant montage pour éviter les écarts SSR/CSR */
+function NavTabs({ tabs }: { tabs: Tab[] }) {
   const pathname = usePathname();
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   return (
     <nav className="space-y-1">
-      {TABS.map((t) => {
-        const active = pathname === t.href || pathname.startsWith(t.href + "/");
+      {tabs.map((t) => {
+        const active =
+          mounted && (pathname === t.href || pathname.startsWith(t.href + "/"));
+
         return (
           <Link
             key={t.href}
             href={t.href}
-            className={`block rounded-lg px-3 py-2 text-[15px] font-semibold ${
-              active ? "bg-neutral-900 text-white" : "text-neutral-700 hover:bg-neutral-100"
-            }`}
+            prefetch={false}
+            className={
+              "block rounded-lg px-3 py-2 text-[15px] font-semibold " +
+              (active
+                ? "bg-neutral-900 text-white"
+                : "text-neutral-700 hover:bg-neutral-100")
+            }
           >
             {t.label}
           </Link>
@@ -65,17 +100,26 @@ export default function AccountShell({ children }: Props) {
     setUser: (u: any) => void;
   };
 
-  // --- Rehydrate depuis /api/me si jamais user est nul après refresh (cookies Sanctum)
+  // Abilities (pour afficher/masquer la CVthèque)
+  const [abilities, setAbilities] = useState<{ view_candidates?: boolean }>({});
+
+  // --- Rehydrate depuis /api/me + charge abilities
   useEffect(() => {
     let mounted = true;
     (async () => {
-      if (user) return;
+      if (!user) {
+        try {
+          const r = await me(); // { data: {...} }
+          if (mounted && (r as any)?.data) setUser((r as any).data);
+        } catch {
+          // non connecté : on laisse tel quel
+        }
+      }
       try {
-        const r = await me(); // { data: {...} }
-        if (!mounted) return;
-        if ((r as any)?.data) setUser((r as any).data);
+        const a = await fetchAbilities();
+        if (mounted) setAbilities(a || {});
       } catch {
-        // non connecté : on laisse tel quel
+        // silencieux
       }
     })();
     return () => {
@@ -100,10 +144,9 @@ export default function AccountShell({ children }: Props) {
 
   useEffect(() => {
     const anyUser = user as any;
-
     const raw =
-      anyUser?.created_at ?? // Laravel
-      anyUser?.createdAt ?? // camelCase éventuel
+      anyUser?.created_at ??
+      anyUser?.createdAt ??
       anyUser?.joinedAt ??
       anyUser?.signupDate ??
       anyUser?.metadata?.createdAt;
@@ -140,9 +183,13 @@ export default function AccountShell({ children }: Props) {
       year: "numeric",
     });
 
+  // ⬇️ Important : même structure d’onglets côté serveur et au 1er rendu client
+  // (pas de CVthèque tant qu’on ne connaît pas les abilities)
+  const tabs = makeTabs(!!abilities.view_candidates);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
-      {/* -------- BANNIÈRE HAUTE (au-dessus du bloc central) -------- */}
+      {/* -------- BANNIÈRE HAUTE -------- */}
       <section className="rounded-xl bg-neutral-900 text-white p-6 lg:p-7 flex flex-col lg:flex-row items-center justify-between gap-6">
         <div className="text-center lg:text-left">
           <p className="text-sm opacity-80 mb-1">Bonjour</p>
@@ -151,7 +198,8 @@ export default function AccountShell({ children }: Props) {
             Merci de contribuer à faire avancer l’information santé en Afrique
             {since ? (
               <>
-                {" "}depuis le <span className="font-semibold">{since}</span>.
+                {" "}
+                depuis le <span className="font-semibold">{since}</span>.
               </>
             ) : (
               <>.</>
@@ -176,13 +224,11 @@ export default function AccountShell({ children }: Props) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
         <aside className="lg:sticky lg:top-24 h-max">
           <div className="rounded-xl border bg-white p-4 shadow-sm">
-            <NavTabs />
+            <NavTabs tabs={tabs} />
           </div>
         </aside>
 
-        <main className="space-y-6">
-          {children}
-        </main>
+        <main className="space-y-6">{children}</main>
       </div>
     </div>
   );

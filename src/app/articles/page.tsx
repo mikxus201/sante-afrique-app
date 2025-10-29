@@ -117,6 +117,14 @@ function pickCategory(a: any): string {
   return toText(src);
 }
 
+const slugify = (s: string) =>
+  String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
 /* ========= Fetchers ========= */
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
@@ -126,25 +134,77 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
-async function listArticles(params: { page: number; sort: string; q?: string; perPage?: number }) {
+async function listArticles(params: {
+  page: number;
+  sort: string;
+  q?: string;
+  perPage?: number;
+  authorSlug?: string;
+  rubriqueSlug?: string;
+}) {
   const sp = new URLSearchParams();
   sp.set("page", String(params.page));
   sp.set("sort", params.sort === "views" ? "views" : "date");
   if (params.q) sp.set("search", params.q);
   sp.set("perPage", String(params.perPage ?? 12));
+  if (params.authorSlug) sp.set("author", params.authorSlug);     // <<< NOUVEAU
+  if (params.rubriqueSlug) sp.set("rubrique", params.rubriqueSlug); // <<< NOUVEAU
 
   const payload = await fetchJSON<any>(apiUrl(`/articles?${sp.toString()}`));
 
+  // Uniformisation Paginator/array
+  let paginator: Paginator<Article>;
   if (Array.isArray(payload)) {
-    return {
+    paginator = {
       current_page: 1,
       per_page: payload.length,
       total: payload.length,
       last_page: 1,
       data: payload as Article[],
-    } as Paginator<Article>;
+    };
+  } else {
+    paginator = payload as Paginator<Article>;
   }
-  return payload as Paginator<Article>;
+
+  // 🛟 Fallback: si l'API n'a pas filtré, on filtre côté client (meilleur-effort)
+if (params.authorSlug || params.rubriqueSlug) {
+  const normCat = (a: any) => {
+    const v =
+      a?.category_name ??
+      a?.rubrique_name ??
+      a?.section_name ??
+      a?.category?.name ??
+      a?.section?.name ??
+      a?.rubrique?.name ??
+      a?.rubric?.name ??
+      a?.category ??
+      a?.section ??
+      a?.rubrique ??
+      a?.rubric ??
+      "";
+    return slugify(v);
+  };
+
+  const normAuthor = (a: any) =>
+    slugify(a?.author_slug ?? a?.author ?? "");
+
+  const filtered = paginator.data.filter((a) => {
+    const okA = !params.authorSlug || normAuthor(a) === params.authorSlug;
+    const okC = !params.rubriqueSlug || normCat(a) === params.rubriqueSlug;
+    return okA && okC;
+  });
+
+    paginator = {
+      ...paginator,
+      total: filtered.length,
+      per_page: Math.min(paginator.per_page, filtered.length),
+      last_page: 1, // côté client on n'a pas la vraie pagination filtrée
+      current_page: 1,
+      data: filtered.slice(0, paginator.per_page),
+    };
+  }
+
+  return paginator;
 }
 
 /* ========= SEO ========= */
@@ -157,19 +217,33 @@ export const metadata = {
 export default async function ArticlesIndex({
   searchParams,
 }: {
-  searchParams?: { page?: string; sort?: string; q?: string };
+  searchParams?: { page?: string; sort?: string; q?: string; author?: string; rubrique?: string }; // <<< étend ici
 }) {
   const page = Math.max(1, Number(searchParams?.page || "1"));
   const sort = searchParams?.sort === "views" ? "views" : "date";
   const q = (searchParams?.q || "").trim() || undefined;
 
-  const paginator = await listArticles({ page, sort, q, perPage: 12 });
+  // <<< NOUVEAU
+  const authorSlug = typeof searchParams?.author === "string" ? searchParams!.author.trim().toLowerCase() : "";
+  const rubriqueSlug = typeof searchParams?.rubrique === "string" ? searchParams!.rubrique.trim().toLowerCase() : "";
+
+  const paginator = await listArticles({
+    page,
+    sort,
+    q,
+    perPage: 12,
+    authorSlug: authorSlug || undefined,
+    rubriqueSlug: rubriqueSlug || undefined,
+  });
 
   const buildHref = (over: Partial<{ page: number; sort: string; q?: string }>) => {
     const qp = new URLSearchParams();
     qp.set("page", String(over.page ?? page));
     qp.set("sort", over.sort ?? sort);
     if (typeof (over.q ?? q) !== "undefined" && (over.q ?? q)) qp.set("q", String(over.q ?? q));
+    // <<< conserve les filtres actifs
+    if (authorSlug) qp.set("author", authorSlug);
+    if (rubriqueSlug) qp.set("rubrique", rubriqueSlug);
     const s = qp.toString();
     return s ? `/articles?${s}` : `/articles`;
   };
@@ -184,7 +258,17 @@ export default async function ArticlesIndex({
 
       {/* En-tête + recherche */}
       <header className="flex items-end justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold">Tous les articles</h1>
+        <h1 className="text-2xl font-bold">Tous les articles</h1> 
+           {(authorSlug || rubriqueSlug) && (
+           <div className="text-sm text-neutral-600">
+            Filtre actif :
+          {authorSlug && <> auteur = <strong>{authorSlug}</strong></>}
+          {authorSlug && rubriqueSlug && " ; "}
+          {rubriqueSlug && <> rubrique = <strong>{rubriqueSlug}</strong></>}
+             {" "}
+           <Link href="/articles" className="underline ml-1">Retirer le filtre</Link>
+          </div>
+           )}
         <form method="GET" action="/articles" className="flex items-center gap-2">
           <input type="hidden" name="sort" defaultValue={sort} />
           <input
@@ -239,16 +323,23 @@ export default async function ArticlesIndex({
                     sizes="(max-width:640px) 100vw, (max-width:1024px) 50vw, 33vw"
                   />
                 </div>
-                <div className="p-3">
+              <div className="p-3">
                   <div className="text-xs text-neutral-500 mb-1">
-                    {cat}
-                    {a.published_at && (
-                      <>
-                        {cat ? " • " : ""}
-                        {new Date(a.published_at).toLocaleDateString("fr-FR")}
-                      </>
-                    )}
-                  </div>
+                    {cat ? (
+                     <Link
+                       href={`/articles?rubrique=${encodeURIComponent(slugify(cat))}`}
+                       className="hover:underline"
+                 >
+                      {cat}
+                     </Link>
+                     ) : null}
+                     {a.published_at && (
+                     <>
+                       {cat ? " • " : ""}
+                      {new Date(a.published_at).toLocaleDateString("fr-FR")}
+                    </>
+                 )}
+                </div>
                   <h3 className="text-sm font-medium leading-snug group-hover:underline line-clamp-3">
                     {a.title}
                   </h3>

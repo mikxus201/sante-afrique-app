@@ -33,20 +33,20 @@ export default function CurrentIssue({ issue }: Props) {
 
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
-            href={`/magazine/${encodeURIComponent(String(issue.id))}`}
-            className="inline-flex rounded-full bg-blue-600 px-4 py-2 font-semibold text-white hover:brightness-95"
-          >
-            Lire en ligne
-          </Link>
+           href={`/magazine/${encodeURIComponent(String(issue.id))}/lire`}
+           className="inline-flex rounded-full bg-blue-600 px-4 py-2 font-semibold text-white hover:brightness-95"
+        >
+          Lire en ligne
+        </Link>
 
-          {(issue.excerptPdf || (issue.excerptImages && issue.excerptImages.length > 0)) && (
-            <Link
-              href={`/magazine/${encodeURIComponent(String(issue.id))}#extrait`}
-              className="inline-flex rounded-full border px-4 py-2 text-neutral-700 hover:bg-neutral-50"
-            >
-              Feuilleter un extrait
+         {(issue.excerptPdf || (issue.excerptImages && issue.excerptImages.length > 0)) && (
+        <Link
+         href={`/magazine/${encodeURIComponent(String(issue.id))}/sommaire`}
+           className="inline-flex rounded-full border px-4 py-2 text-neutral-700 hover:bg-neutral-50"
+        >
+             Feuilleter un extrait
             </Link>
-          )}
+            )}
         </div>
       </div>
     </article>

@@ -1,31 +1,40 @@
+// src/components/Hero.tsx
 import Image from "next/image";
 
 type Props = {
   title: string;
   subtitle?: string;
-  image?: string;     // ex: /heroes/about.jpg (public)
+  image?: string;                 // ex: /heroes/about.jpg (public)
   align?: "left" | "center" | "right";
+  height?: "normal" | "tall";     // hauteur x1 ou x2
   children?: React.ReactNode;
 };
 
 export default function Hero({
   title,
   subtitle,
-  image,
+  image: bgImage,                 // ← alias pour éviter "image is not defined"
   align = "center",
+  height = "normal",
   children,
 }: Props) {
-  const justify =
-    align === "left" ? "items-start text-left" :
-    align === "right" ? "items-end text-right" : "items-center text-center";
+  const alignClasses =
+    align === "left"
+      ? "items-start text-left justify-start"
+      : align === "right"
+      ? "items-end text-right justify-end"
+      : "items-center text-center justify-center";
+
+  const heightClasses =
+    height === "tall" ? "h-[480px] md:h-[600px]" : "h-[240px] md:h-[300px]";
 
   return (
     <section className="relative w-full overflow-hidden">
       {/* Fond image */}
-      <div className="relative h-[240px] md:h-[300px] w-full">
-        {image ? (
+      <div className={`relative w-full ${heightClasses}`}>
+        {bgImage ? (
           <Image
-            src={image}
+            src={bgImage}
             alt={title}
             fill
             priority
@@ -41,7 +50,7 @@ export default function Hero({
 
       {/* Contenu */}
       <div className="absolute inset-0">
-        <div className={`mx-auto max-w-6xl h-full px-4 flex ${justify} justify-center md:justify-start`}>
+        <div className={`mx-auto max-w-6xl h-full px-4 flex ${alignClasses}`}>
           <div className="self-end pb-8 md:pb-10 text-white drop-shadow">
             <h1 className="text-3xl md:text-4xl font-extrabold">{title}</h1>
             {subtitle && (

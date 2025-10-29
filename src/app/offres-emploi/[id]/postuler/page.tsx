@@ -1,160 +1,127 @@
 // src/app/offres-emploi/[id]/postuler/page.tsx
 "use client";
 
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import jobsData from "../../../../../data/jobs.json";
+import { useState } from "react";
+import { API_PREFIX } from "@/lib/api";
+import { useParams, useRouter } from "next/navigation";
 
-type Job = {
-  id: string | number;
-  title: string;
-  company: string;
-  type: string;
-  location: string;
-  publishedAt: string;
-  excerpt?: string;
-};
-
-const JOBS: Job[] = (jobsData as any) as Job[];
-
-export default function PostulerPage({ params }: { params: { id: string } }) {
-  const job = useMemo(() => JOBS.find((j) => String(j.id) === params.id), [params.id]);
-  const [sending, setSending] = useState(false);
-  const [done, setDone] = useState<null | { ref: string }>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSending(true);
-    setError(null);
-    setDone(null);
-
-    const form = e.currentTarget;
-    const fd = new FormData(form);
-
+/* ===== CSRF helpers (Sanctum) ===== */
+function getCookie(name: string) {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp("(^|; )" + name + "=([^;]+)"));
+  return m ? decodeURIComponent(m[2]) : null;
+}
+async function ensureCsrf() {
+  await fetch("/sanctum/csrf-cookie", { credentials: "include" });
+}
+async function postForm(url: string, fd: FormData) {
+  await ensureCsrf();
+  const xsrf = getCookie("XSRF-TOKEN") || "";
+  const res = await fetch(url, {
+    method: "POST",
+    body: fd,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+      ...(xsrf ? { "X-XSRF-TOKEN": xsrf } : {}),
+    },
+  });
+  if (!res.ok) {
+    let msg = "apply failed";
     try {
-      const r = await fetch("/api/candidature", { method: "POST", body: fd });
-      const json = await r.json();
-      if (!r.ok || !json?.ok) throw new Error(json?.error || "Échec d’envoi");
-      setDone({ ref: (json.saved?.cv?.filename || "OK") as string });
-      form.reset();
-    } catch (err: any) {
-      setError(err.message || "Erreur inconnue");
-    } finally {
-      setSending(false);
-    }
+      const j = await res.json();
+      msg = j?.message || j?.error || msg;
+    } catch {}
+    throw new Error(msg);
   }
+  return res.json().catch(() => ({}));
+}
 
-  if (!job) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-2xl font-extrabold">Offre introuvable</h1>
-        <Link href="/offres" className="mt-6 inline-block rounded border px-4 py-2 hover:bg-neutral-50">
-          ← Retour aux offres
-        </Link>
-      </div>
-    );
-  }
+export default function ApplyPage() {
+  // ✅ Option A : récupérer l’id via le hook, pas via props (évite le warning “params is a Promise”)
+  const { id } = useParams<{ id: string }>();
+  const jobId = String(id || "");
+
+  const [name, setName]   = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [cover, setCover] = useState("");
+  const [cv, setCv]       = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const r = useRouter();
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jobId) return alert("Offre introuvable.");
+    if (!cv)    return alert("Veuillez joindre votre CV (PDF/DOC/DOCX).");
+
+    setLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("job_id", jobId);
+      fd.append("name", name);
+      fd.append("email", email);
+      fd.append("phone", phone);
+      fd.append("cover_letter", cover);
+      fd.append("cv", cv);
+
+      await postForm(`${API_PREFIX}/jobs/${encodeURIComponent(jobId)}/apply`, fd);
+
+      alert("Votre candidature a bien été envoyée !");
+      r.push(`/offres-emploi/${encodeURIComponent(jobId)}`);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || "Échec de l’envoi. Réessayez.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      {/* Ariane */}
-      <nav className="mb-4 text-sm text-neutral-500">
-        <Link href="/" className="hover:underline">Accueil</Link>
-        <span className="mx-1">/</span>
-        <Link href="/offres" className="hover:underline">Offres d’emploi</Link>
-        <span className="mx-1">/</span>
-        <Link href={`/offres-emploi/${job.id}`} className="hover:underline">{job.title}</Link>
-        <span className="mx-1">/</span>
-        <span>Postuler</span>
-      </nav>
+    <div className="mx-auto max-w-2xl px-4 py-10">
+      <h1 className="text-xl font-bold">Postuler à l’offre #{jobId}</h1>
 
-      <h1 className="text-2xl md:text-3xl font-extrabold">Postuler — {job.title}</h1>
-      <p className="mt-1 text-neutral-700">
-        <strong>{job.company}</strong> · {job.type} · {job.location}
-      </p>
+      <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <input
+          className="w-full border rounded px-3 py-2"
+          placeholder="Nom complet*"
+          value={name}
+          onChange={(e)=>setName(e.target.value)}
+          required
+        />
+        <input
+          type="email"
+          className="w-full border rounded px-3 py-2"
+          placeholder="Email*"
+          value={email}
+          onChange={(e)=>setEmail(e.target.value)}
+          required
+        />
+        <input
+          className="w-full border rounded px-3 py-2"
+          placeholder="Téléphone"
+          value={phone}
+          onChange={(e)=>setPhone(e.target.value)}
+        />
+        <textarea
+          className="w-full border rounded px-3 py-2 h-40"
+          placeholder="Message / lettre de motivation"
+          value={cover}
+          onChange={(e)=>setCover(e.target.value)}
+        />
+        <input
+          type="file"
+          accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={(e)=>setCv(e.target.files?.[0] ?? null)}
+        />
 
-      <form className="mt-6 space-y-4 rounded border bg-white p-4" onSubmit={onSubmit}>
-        {/* champs cachés pour le backend */}
-        <input type="hidden" name="jobId" value={String(job.id)} />
-        <input type="hidden" name="jobTitle" value={job.title} />
-
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium">Adresse email</label>
-            <input
-              type="email"
-              name="email"
-              required
-              placeholder="vous@exemple.com"
-              className="mt-1 w-full rounded border px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Numéro de téléphone</label>
-            <input
-              type="tel"
-              name="phone"
-              required
-              placeholder="+225 01 23 45 67 89"
-              className="mt-1 w-full rounded border px-3 py-2"
-            />
-          </div>
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium">CV (PDF, DOC, DOCX)</label>
-            <input
-              type="file"
-              name="cv"
-              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              required
-              className="mt-1 w-full rounded border px-3 py-2 file:mr-3 file:rounded file:border file:px-3 file:py-1.5"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Lettre de motivation (PDF, DOC, DOCX)</label>
-            <input
-              type="file"
-              name="lm"
-              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              required
-              className="mt-1 w-full rounded border px-3 py-2 file:mr-3 file:rounded file:border file:px-3 file:py-1.5"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium">Message (optionnel)</label>
-          <textarea name="message" rows={4} className="mt-1 w-full rounded border px-3 py-2" />
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {done && (
-          <p className="text-sm text-green-700">
-            Candidature envoyée ✅ (réf. <span className="font-mono">{done.ref}</span>)
-          </p>
-        )}
-
-        <div className="flex items-center gap-3">
-          <Link href={`/offres-emploi/${job.id}`} className="rounded border px-4 py-2 hover:bg-neutral-50">
-            ← Retour à l’offre
-          </Link>
-          <button
-            type="submit"
-            disabled={sending}
-            className="inline-flex items-center rounded bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {sending ? "Envoi en cours…" : "Envoyer ma candidature"}
-          </button>
-        </div>
-
-        <p className="mt-2 text-xs text-neutral-500">
-          En envoyant ce formulaire, vous acceptez nos{" "}
-          <Link href="/conditions" className="underline">Conditions d’utilisation</Link> et notre{" "}
-          <Link href="/confidentialite" className="underline">Politique de confidentialité</Link>.
-        </p>
+        <button
+          disabled={loading}
+          className="rounded bg-blue-600 text-white px-4 py-2 font-semibold hover:bg-blue-700"
+        >
+          {loading ? "Envoi…" : "Envoyer la candidature"}
+        </button>
       </form>
     </div>
   );

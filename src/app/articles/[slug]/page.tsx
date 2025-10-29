@@ -64,17 +64,19 @@ const toImg = (a: Article) => {
   return /^https?:\/\//i.test(t) ? t : `${apiRoot()}/${String(t).replace(/^\/+/, "").replace(/^public\//i,"")}`;
 };
 
+
 const slugify = (s: string) =>
-  s
+  String(s || "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
+
 /* ========= Fetchers ========= */
 async function getArticleBySlug(slug: string): Promise<Article | null> {
-  const url = apiUrl(`/api/articles/slug/${encodeURIComponent(slug)}`);
+  const url = apiUrl(`/articles/slug/${encodeURIComponent(slug)}`);
   const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
   const raw = await res.text();
   if (!res.ok) throw new Error(`API ${res.status}: ${raw.slice(0, 400)}`);
@@ -89,7 +91,7 @@ async function listRelated(a: Article) {
   qs.set("perPage", "12");
   qs.set("sort", "date");
 
-  const res = await fetch(apiUrl(`/api/articles?${qs.toString()}`), {
+  const res = await fetch(apiUrl(`/articles?${qs.toString()}`), {
     headers: { Accept: "application/json" },
     cache: "no-store",
     next: { revalidate: 0 },
@@ -170,6 +172,12 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     mainEntityOfPage: { "@type": "WebPage", "@id": absUrl(canonical) },
   };
 
+      // ↓↓↓ AJOUT : slugs auteur & rubrique pour les liens de filtre
+     const authorSlug = a.author_slug || (a.author ? slugify(a.author) : "");
+     const catName = a.category_name || pickCategoryName(a);
+     const rubriqueSlug = slugify(catName);
+
+
   const authorHref = a.author
     ? `/auteurs/${encodeURIComponent(a.author_slug || slugify(a.author))}`
     : null;
@@ -199,14 +207,21 @@ export default async function ArticlePage({ params }: { params: { slug: string }
       {/* Titre + méta */}
       <h1 className="text-3xl font-bold mb-2">{a.title}</h1>
       <div className="text-sm text-neutral-600 mb-4">
-        {authorHref ? (
-          <>
-            Par <Link href={authorHref} className="underline">{a.author}</Link>
-          </>
+        {authorSlug ? (
+         <>Par <Link href={`/articles?author=${encodeURIComponent(authorSlug)}`} className="underline">{a.author}</Link></>
+         ) : null}
+         {catName ? (
+    <>
+         {" · "}
+         Rubrique :{" "}
+      <Link href={`/articles?rubrique=${encodeURIComponent(rubriqueSlug)}`} className="underline">
+        {catName}
+       </Link>
+     </>
         ) : null}
-        {a.published_at ? <> · {new Date(a.published_at).toLocaleDateString("fr-FR")}</> : null}
-        {typeof a.views === "number" ? <> · {a.views} vues</> : null}
-      </div>
+       {a.published_at ? <> · {new Date(a.published_at).toLocaleDateString("fr-FR")}</> : null}
+       {typeof a.views === "number" ? <> · {a.views} vues</> : null}
+    </div>
 
       {/* Image */}
       {img && (
