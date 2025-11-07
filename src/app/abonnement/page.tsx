@@ -84,8 +84,8 @@ async function getPlans(): Promise<Plan[]> {
 }
 async function getHelp(): Promise<HelpItem[]> {
   try {
-    const base = serverBase();
-    const r = await fetch(`${base}/api/help/subscribe`, { cache: "no-store" });
+    const base = apiBase(); // ← ICI: on appelle bien le serveur Laravel
+    const r = await fetch(`${base}/api/help/subscribe`, { cache: "no-store", headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error("help");
     const { items } = (await r.json()) as { items: HelpItem[] };
     return items ?? [];

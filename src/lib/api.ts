@@ -64,14 +64,21 @@ const ax = axios.create({
 ax.defaults.xsrfCookieName = "XSRF-TOKEN";
 ax.defaults.xsrfHeaderName = "X-XSRF-TOKEN";
 
-/** (optionnel) bearer local si présent */
 ax.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const t = localStorage.getItem("sa_token");
-    if (t) (config.headers ??= {} as any)["Authorization"] = `Bearer ${t}`;
-
-    // Pose explicitement X-XSRF-TOKEN si absent
     const h = (config.headers ??= {} as any);
+
+    // ✅ N'utilise le Bearer QUE s'il n'y a PAS de session Laravel
+    const t = localStorage.getItem("sa_token");
+    const hasSession = /(?:^|;\s*)laravel_session=/.test(document.cookie);
+    if (t && !hasSession) {
+      h["Authorization"] = `Bearer ${t}`;
+    } else {
+      // important: ne pas laisser un vieux header traîner
+      if ("Authorization" in h) delete h["Authorization"];
+    }
+
+    // CSRF
     if (!("X-XSRF-TOKEN" in h)) {
       const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
       if (m) h["X-XSRF-TOKEN"] = decodeURIComponent(m[1]);
@@ -79,6 +86,8 @@ ax.interceptors.request.use((config) => {
   }
   return config;
 });
+
+
 
 // ---- CSRF lazy + retry 401/419
 let csrfReady = false;
@@ -88,6 +97,7 @@ async function ensureCsrf() {
     csrfReady = true;
   }
 }
+
 async function withRetry<T>(doCall: () => Promise<T>): Promise<T> {
   try {
     return await doCall();
@@ -544,8 +554,62 @@ export async function updateMe(data: {
 }
 
 /** Abonnement courant */
-export async function getMySubscription() {
-  return getJSON<{ data: any }>("/api/me/subscription");
+export type SubscriptionStatus = {
+  active: boolean;
+  recruiter_active?: boolean;
+  [k: string]: any;
+};
+
+export async function getMySubscription(): Promise<SubscriptionStatus> {
+  const base = API_PREFIX.replace(/\/+$/, "");
+  const hdrs = {
+    Accept: "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+  } as const;
+
+  const parse = async (res: Response): Promise<SubscriptionStatus> => {
+    const ct = res.headers.get("content-type") || "";
+    if (res.ok && ct.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      // normalise vers {active, recruiter_active}
+      return {
+        active: !!(data.active ?? data.ok ?? (data.status === "active")),
+        recruiter_active: (data.recruiter_active ?? data.active ?? false) as boolean,
+        ...data,
+      };
+    }
+    return { active: false };
+  };
+
+  // 1) Tentative “officielle” (Sanctum)
+  try {
+    const r1 = await fetch(`${base}/account/subscription`, {
+      method: "GET",
+      headers: hdrs,
+      credentials: "include",
+      cache: "no-store",
+      redirect: "manual",
+    });
+    if (![0, 301, 302, 401, 419].includes(r1.status)) {
+      return await parse(r1);
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Fallback session web (dev/BO)
+  try {
+    const r2 = await fetch(`${base}/me/subscription`, {
+      method: "GET",
+      headers: hdrs,
+      credentials: "include",
+      cache: "no-store",
+      redirect: "manual",
+    });
+    return await parse(r2);
+  } catch {
+    return { active: false };
+  }
 }
 
 /** Moyens de paiement */
@@ -638,3 +702,4 @@ export async function postForm(url: string, formData: FormData, init: RequestIni
   const txt = await res.text();
   return txt ? JSON.parse(txt) : {};
 }
+export { ensureCsrf };

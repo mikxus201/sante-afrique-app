@@ -37,6 +37,13 @@ function toPath(i: IssueLite) {
   );
 }
 
+/** ✅ Segment pour la lecture protégée : ID numérique prioritaire */
+function toReadKey(i: IssueLite) {
+  const raw = String(i?.id ?? "").trim();
+  const numericId = /^\d+$/.test(raw) ? raw : "";
+  return numericId || toPath(i);
+}
+
 async function fetchIssues(): Promise<IssueLite[]> {
   try {
     const r = await fetch(`${BASE}/api/issues`, {
@@ -65,6 +72,7 @@ export default async function IssuesSummaryGrid() {
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
         {list.map((m) => {
           const path = toPath(m);
+          const readKey = toReadKey(m); // <- ID numérique si dispo
           const coverSrc = m.cover_url || m.cover || "/placeholder.jpg";
 
           return (
@@ -105,7 +113,7 @@ export default async function IssuesSummaryGrid() {
                     Sommaire
                   </Link>
                   <Link
-                    href={`/magazine/${encodeURIComponent(path)}/lire`}
+                    href={`/magazine/${encodeURIComponent(readKey)}/lire`}
                     className="inline-flex items-center rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
                     prefetch={false}
                   >

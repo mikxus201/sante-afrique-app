@@ -1,13 +1,21 @@
 // src/app/entreprises/page.tsx
-import Image from "next/image";
 import Link from "next/link";
 import { fetchCompanies } from "@/lib/jobs";
+import CompanyLogo from "@/components/CompanyLogo";
 
 export const metadata = { title: "Les entreprises qui recrutent — Santé Afrique" };
+export const revalidate = 0;
+
+type Company = {
+  id: number | string;
+  name: string;
+  logo_url?: string | null;
+  jobs_count?: number;
+};
 
 export default async function CompaniesPage() {
   const res = await fetchCompanies();
-  const items = res.items || [];
+  const items: Company[] = Array.isArray(res?.items) ? res.items : [];
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -16,14 +24,20 @@ export default async function CompaniesPage() {
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
         {items.map((c) => (
-          <Link key={c.id} href={`/offres-emploi?companyId=${c.id}`} className="rounded-lg border p-4 hover:shadow">
+          <Link
+            key={c.id}
+            href={`/offres-emploi?companyId=${encodeURIComponent(String(c.id))}`}
+            className="rounded-lg border p-4 hover:shadow bg-white"
+          >
             <div className="flex items-center gap-3">
-              <div className="relative h-12 w-12 overflow-hidden rounded bg-neutral-100">
-                {c.logo_url ? <Image src={c.logo_url} alt={c.name} fill className="object-cover" /> : null}
-              </div>
-              <div>
-                <p className="font-semibold">{c.name}</p>
-                <p className="text-xs text-neutral-500">{c.jobs_count} offre(s) publiée(s)</p>
+              {/* Logo 56×56, object-cover, alt dynamique + fallback initiale */}
+              <CompanyLogo src={c.logo_url ?? null} name={c.name} />
+
+              <div className="min-w-0">
+                <p className="font-semibold truncate">{c.name}</p>
+                <p className="text-xs text-neutral-500">
+                  {(c.jobs_count ?? 0)} offre{(c.jobs_count ?? 0) > 1 ? "s" : ""} publiée{(c.jobs_count ?? 0) > 1 ? "s" : ""}
+                </p>
               </div>
             </div>
           </Link>

@@ -8,6 +8,7 @@ import { sections } from "../../data/sections";
 import { me } from "@/lib/auth"; // notre helper qui appelle /api/auth/me
 import { useAuth } from "@/lib/auth-client"; // contexte auth
 import { logout } from "@/lib/auth";
+import { getJSON } from "@/lib/api"; // ← ajouté pour lire /api/me/subscription
 
 // ======================
 // Types & helpers
@@ -220,6 +221,17 @@ export default function Header() {
   const toImg = (a: Article) => pickCardImage(a);
   const nameForUi = displayName(user as User | null);
 
+  // ===== Bouton d’abonnement dynamique =====
+  type SubResponse = { active: boolean };
+  const [subActive, setSubActive] = useState<boolean | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    getJSON<SubResponse>("/api/me/subscription")
+      .then((r) => { if (mounted) setSubActive(!!r?.active); })
+      .catch(() => { if (mounted) setSubActive(false); }); // non connecté → montre “S’abonner”
+    return () => { mounted = false; };
+  }, []);
+
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b">
       {/* ===== Bande 1 ===== */}
@@ -297,13 +309,23 @@ export default function Header() {
               )}
             </span>
 
+            {/* CTA abonnement : dynamique */}
             <span className="px-3">
-              <Link
-                href="/abonnement"
-                className="inline-flex rounded-full bg-amber-200/70 px-3 py-1.5 font-semibold text-amber-900 hover:brightness-95"
-              >
-                S’abonner
-              </Link>
+              {subActive ? (
+                <Link
+                  href="/compte#abonnement"
+                  className="inline-flex rounded-full bg-neutral-900 px-3 py-1.5 font-semibold text-white hover:bg-neutral-800"
+                >
+                  Mon abonnement
+                </Link>
+              ) : (
+                <Link
+                  href="/abonnement"
+                  className="inline-flex rounded-full bg-amber-200/70 px-3 py-1.5 font-semibold text-amber-900 hover:brightness-95"
+                >
+                  S’abonner
+                </Link>
+              )}
             </span>
           </nav>
         </div>

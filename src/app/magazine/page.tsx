@@ -18,18 +18,29 @@ const API_ROOT =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) ||
   "http://localhost:8000";
 
-// Construit le segment d'URL (slug > numéro > id)
+/** Construit le segment d'URL: slug prioritaire, sinon id */
 function issuePathSegment(i: Partial<Issue> & Record<string, any>) {
-  return (
-    (i as any).slug ||
-    (i?.number ? `numero-${i.number}` : null) ||
-    i?.id
-  );
+  const slug = (i as any).slug ? String((i as any).slug).trim() : "";
+  if (slug) return slug;
+  return String(i?.id ?? "");
+}
+
+/** Href vers la page lecture protégée */
+function readHref(i: Partial<Issue> & Record<string, any>) {
+  const rawId = String(i?.id ?? "").trim();
+  const numericId = /^\d+$/.test(rawId) ? rawId : "";
+  const key = numericId || issuePathSegment(i); // fallback slug si pas d'ID numérique
+  return `/magazine/${encodeURIComponent(key)}/lire`;
+}
+
+/** Href vers le sommaire public */
+function summaryHref(i: Partial<Issue> & Record<string, any>) {
+  return `/magazine/${encodeURIComponent(issuePathSegment(i))}/sommaire`;
 }
 
 function normalizeIssue(i: any): Issue {
   const n: Issue = {
-    id: i?.id ?? i?.slug ?? i?.uuid ?? Math.random().toString(36).slice(2),
+    id: i?.id ?? i?.uuid ?? i?.slug ?? Math.random().toString(36).slice(2),
     number: i?.number ?? i?.num ?? undefined,
     // @ts-ignore
     slug: i?.slug ?? undefined,
@@ -52,18 +63,13 @@ function normalizeIssue(i: any): Issue {
 }
 
 async function loadIssuesResilient(): Promise<Issue[]> {
-  // 1) Essai via ton helper
   try {
     const items = await listIssues({ page: 1, perPage: 50, order: "recent" });
     if (Array.isArray(items) && items.length) return items;
   } catch {}
 
-  // 2) Endpoints publics (priorité à /api/issues)
   const base = API_ROOT.replace(/\/+$/, "");
-  const endpoints = [
-    `${base}/api/issues`,
-    `${base}/api/issues?status=published`,
-  ];
+  const endpoints = [`${base}/api/issues`, `${base}/api/issues?status=published`];
 
   for (const url of endpoints) {
     try {
@@ -124,12 +130,8 @@ export default async function MagazinePage() {
       {current ? (
         <section className="mb-10 grid gap-8 lg:grid-cols-[auto,1fr]">
           <div className="mx-auto lg:mx-0 w-full max-w-[520px]">
-            {/* 👉 Lien direct vers le SOMMAIRE public */}
-            <Link
-              href={`/magazine/${issuePathSegment(current)}/sommaire`}
-              className="block"
-              prefetch={false}
-            >
+            {/* 👉 Couverture = lien vers SOMMAIRE public */}
+            <Link href={summaryHref(current)} className="block" prefetch={false}>
               <div className="relative aspect-[3/4] overflow-hidden rounded-xl border bg-neutral-50">
                 <Image
                   src={toImg(current)}
@@ -161,14 +163,14 @@ export default async function MagazinePage() {
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
-                href={`/magazine/${issuePathSegment(current)}/sommaire`}
+                href={summaryHref(current)}
                 className="rounded-full bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700"
                 prefetch={false}
               >
                 Voir le sommaire
               </Link>
               <Link
-                href={`/magazine/${issuePathSegment(current)}/lire`}
+                href={readHref(current)}
                 className="rounded-full border px-4 py-2 text-neutral-700 hover:bg-neutral-50"
                 prefetch={false}
               >
@@ -193,11 +195,7 @@ export default async function MagazinePage() {
           {older.map((i) => (
             <li key={i.id}>
               {/* 👉 Tous pointent vers le SOMMAIRE public */}
-              <Link
-                href={`/magazine/${issuePathSegment(i)}/sommaire`}
-                className="group block"
-                prefetch={false}
-              >
+              <Link href={summaryHref(i)} className="group block" prefetch={false}>
                 <div className="mx-auto w-full max-w-[220px]">
                   <div className="relative aspect-[3/4] overflow-hidden rounded-lg border bg-neutral-50">
                     <Image

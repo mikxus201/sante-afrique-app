@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import ShareBar from "@/components/ShareBar";
+import ShareBar from "@/components/ShareButtons";
 import ArticleCard from "@/components/ArticleCard";
 import { SITE_NAME, absUrl } from "@/lib/site";
 import { apiUrl } from "@/lib/api";

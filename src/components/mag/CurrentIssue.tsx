@@ -1,4 +1,3 @@
-// src/components/mag/CurrentIssue.tsx
 import Link from "next/link";
 import Image from "next/image";
 import type { Issue } from "../../types/mag";
@@ -6,18 +5,22 @@ import type { Issue } from "../../types/mag";
 type Props = { issue: Issue };
 
 export default function CurrentIssue({ issue }: Props) {
-  const dateTxt = new Date(issue.date).toLocaleDateString("fr-FR", {
+  const dateTxt = new Date(issue.date as any).toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "long",
     year: "numeric",
   });
 
+  // ✅ Toujours une image exploitable
+  const coverSrc =
+    (issue as any).cover || (issue as any).cover_url || "/placeholder.jpg";
+
   return (
     <article className="grid gap-6 lg:grid-cols-[1fr_1.2fr] items-start">
       <div className="relative w-full aspect-[3/4] rounded-xl overflow-hidden ring-1 ring-neutral-200 bg-neutral-100">
         <Image
-          src={issue.cover}
-          alt={`Couverture n°${issue.number}`}
+          src={coverSrc}
+          alt={`Couverture n°${issue.number ?? "—"}`}
           fill
           className="object-cover"
           sizes="(min-width:1024px) 420px, 60vw"
@@ -33,20 +36,22 @@ export default function CurrentIssue({ issue }: Props) {
 
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
-           href={`/magazine/${encodeURIComponent(String(issue.id))}/lire`}
-           className="inline-flex rounded-full bg-blue-600 px-4 py-2 font-semibold text-white hover:brightness-95"
-        >
-          Lire en ligne
-        </Link>
+            href={`/magazine/${encodeURIComponent(String(issue.id))}/lire`}
+            className="inline-flex rounded-full bg-blue-600 px-4 py-2 font-semibold text-white hover:brightness-95"
+          >
+            Lire en ligne
+          </Link>
 
-         {(issue.excerptPdf || (issue.excerptImages && issue.excerptImages.length > 0)) && (
-        <Link
-         href={`/magazine/${encodeURIComponent(String(issue.id))}/sommaire`}
-           className="inline-flex rounded-full border px-4 py-2 text-neutral-700 hover:bg-neutral-50"
-        >
-             Feuilleter un extrait
+          {(issue as any).excerptPdf ||
+          ((issue as any).excerptImages &&
+            (issue as any).excerptImages.length > 0) ? (
+            <Link
+              href={`/magazine/${encodeURIComponent(String(issue.id))}/sommaire`}
+              className="inline-flex rounded-full border px-4 py-2 text-neutral-700 hover:bg-neutral-50"
+            >
+              Feuilleter un extrait
             </Link>
-            )}
+          ) : null}
         </div>
       </div>
     </article>

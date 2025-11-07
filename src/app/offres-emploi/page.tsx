@@ -10,23 +10,29 @@ import {
   FRANCOPHONE_COUNTRIES,
 } from "@/lib/jobs";
 import Link from "next/link";
-import { API_PREFIX, getJSON } from "@/lib/api";
+import { getJSON } from "@/lib/api";
 
+/* -------------------------------- META -------------------------------- */
 export const metadata = {
   title: "Offres d’emploi — Santé Afrique",
   description: "Votre carrière en santé commence ici.",
 };
 
-// -------- Types --------
+// Pas de cache côté Next
+export const revalidate = 0;
+
+/* -------------------------------- Types API -------------------------------- */
 type ApiJob = {
   id: string | number;
   title?: string;
   name?: string;
-  company?: string | { name?: string; id?: number | string };
+  company?: string | { id?: number | string; name?: string };
   company_id?: number | string;
-  type?: string;             // CDI, CDD…
+  company_logo?: string | null;
+  companyLogo?: string | null;
+  type?: string;
   contract_type?: string;
-  location?: string;         // "Abidjan, Côte d’Ivoire"
+  location?: string;
   city?: string;
   country?: string;
   published_at?: string;
@@ -46,50 +52,77 @@ type BannerRes = {
 
 type CompanyOpt = { id: string | number; name: string };
 
-// Map API → UI JobCard
-const toUiJob = (j: ApiJob): UiJob => ({
-  id: j.id,
-  title: (j.title ?? j.name ?? "").trim() || "Poste",
-  company:
-    (typeof j.company === "string" ? j.company : (j.company?.name ?? "")) || "—",
-  type: j.type ?? j.contract_type ?? "—",
-  location: j.location ?? [j.city, j.country].filter(Boolean).join(", ") ?? "",
-  country: j.country ?? "",
-  publishedAt: j.published_at ?? j.created_at ?? new Date().toISOString(),
-  excerpt: j.excerpt ?? (j.description ? j.description.slice(0, 180) : undefined),
-  applyUrl: j.apply_url ?? j.url ?? undefined,
-});
+/* ------------------------- Mapping API -> UI JobCard ------------------------ */
+const toUiJob = (j: ApiJob): UiJob => {
+  const companyName =
+    (typeof j.company === "string" ? j.company : j.company?.name) ?? "—";
 
-// Fallbacks si l’API des filtres n’existe pas encore
+  return {
+    id: j.id,
+    title: (j.title ?? j.name ?? "").trim() || "Poste",
+    company: companyName,
+    type: j.type ?? j.contract_type ?? "—",
+    location: j.location ?? [j.city, j.country].filter(Boolean).join(", "),
+    country: j.country ?? "",
+    publishedAt: j.published_at ?? j.created_at ?? new Date().toISOString(),
+    excerpt: j.excerpt ?? (j.description ? j.description.slice(0, 180) : undefined),
+    applyUrl: j.apply_url ?? j.url ?? undefined,
+    logoUrl: (j as any).companyLogo ?? (j as any).company_logo ?? undefined,
+  };
+};
+
+/* ------------------------- Fallbacks (si API absente) ----------------------- */
 const DEFAULT_PROFESSIONS = [
-  "Pharmacien(ne)",
-  "Préparateur(trice)",
-  "Infirmier(ère)",
-  "Médecin",
+  "Médecin généraliste",
+  "Infirmier(ère) diplômé(e) d’État",
   "Sage-femme",
-  "Data Analyst",
-  "Biologiste",
-  "Responsable Qualité",
+  "Pharmacien(ne)",
+  "Préparateur(trice) en pharmacie",
+  "Chirurgien(ne)",
+  "Anesthésiste-réanimateur(trice)",
+  "Pédiatre",
+  "Gynécologue-obstétricien(ne)",
+  "Cardiologue",
+  "Dermatologue",
+  "Neurologue",
+  "Psychiatre",
+  "Psychologue clinicien(ne)",
+  "Kinésithérapeute / Rééducateur(trice)",
+  "Ergothérapeute",
+  "Odontologiste / Chirurgien-dentiste",
+  "Technicien(ne) de laboratoire",
+  "Biologiste médical(e)",
+  "Technicien(ne) d’imagerie / Radiologie",
+  "Ophtalmologue",
+  "ORL",
+  "Nutritionniste / Diététicien(ne)",
   "Épidémiologiste",
-  "Psychologue",
+  "Spécialiste Santé publique",
+  "Data Analyst Santé / Biostatisticien(ne)",
+  "Responsable Qualité / Hygiéniste",
+  "Responsable vaccination / EPI",
+  "Coordinateur(trice) de projet santé",
+  "Responsable logistique santé",
+  "Animateur(trice) santé communautaire",
+  "Vétérinaire (One Health)",
+  "Assistant(e) social(e) en santé",
 ];
 
-// Helpers
+/* --------------------------------- Helpers --------------------------------- */
 const uniqueSorted = (arr: Array<string | undefined | null>) =>
   Array.from(new Set(arr.filter(Boolean) as string[])).sort((a, b) =>
     a.localeCompare(b, "fr", { sensitivity: "base" })
   );
 
 const inferCompaniesFromJobs = (jobs: ApiJob[]): CompanyOpt[] => {
-  // On normalise par nom
   const map = new Map<string, CompanyOpt>();
   for (const j of jobs) {
     const name =
-      (typeof j.company === "string" ? j.company : j.company?.name) ??
-      "";
+      (typeof j.company === "string" ? j.company : j.company?.name) ?? "";
     if (!name) continue;
     const id = j.company_id ?? (typeof j.company === "object" && j.company?.id) ?? name;
-    if (!map.has(name)) map.set(name, { id, name });
+    const key = `${id}::${name}`;
+    if (!map.has(key)) map.set(key, { id, name });
   }
   return Array.from(map.values()).sort((a, b) =>
     String(a.name).localeCompare(String(b.name), "fr", { sensitivity: "base" })
@@ -99,40 +132,81 @@ const inferCompaniesFromJobs = (jobs: ApiJob[]): CompanyOpt[] => {
 const inferProfessionsFromJobs = (jobs: ApiJob[]): string[] =>
   uniqueSorted(jobs.map((j) => j.profession));
 
+function findCompanyIdByName(list: CompanyOpt[], name: string): string | null {
+  if (!name) return null;
+  const needle = name.trim().toLowerCase();
+  const found = list.find((c) => String(c.name).trim().toLowerCase() === needle);
+  return found ? String(found.id) : null;
+}
+
+/* --------------------------------- Page ------------------------------------ */
 export default async function JobsPage({
   searchParams,
 }: {
   searchParams: Record<string, string | undefined>;
 }) {
-  // Requêtes parallèles mais "safe"
-  const [jobsP, companiesP, typesP, profsP, bannerP] = await Promise.allSettled([
-    fetchJobs({
-      q: String(searchParams.q ?? ""),
-      country: String(searchParams.country ?? ""),
-      type: String(searchParams.type ?? ""),
-      profession: String(searchParams.profession ?? ""),
-      minExp: String(searchParams.minExp ?? ""),
-      companyId: String(searchParams.companyId ?? ""),
-      sort: (searchParams.sort as any) ?? "date_desc",
-    }),
+  // 1) Récupération des catalogues (entreprises, types, professions, bannière)
+  const [companiesP, typesP, profsP, bannerP] = await Promise.allSettled([
     fetchCompanies(),
-    fetchJobTypes(),       // peut 404 → géré ci-dessous
-    fetchProfessions(),    // peut 404 → géré ci-dessous
-    getJSON<BannerRes>(`${API_PREFIX}/page-banners/jobs`),
+    fetchJobTypes(),
+    fetchProfessions(),
+    getJSON<BannerRes>("/api/page-banners/jobs"),
   ]);
 
-  const jobsRes =
-    jobsP.status === "fulfilled" ? jobsP.value : { items: [], total: 0, pinned: [] };
+  const companiesRes =
+    companiesP.status === "fulfilled" ? companiesP.value : { items: [] as any[] };
 
-  const rawJobs = (jobsRes.items ?? []) as ApiJob[];
+  const apiCompanies: CompanyOpt[] = Array.isArray(companiesRes.items)
+    ? companiesRes.items.map((c: any) => ({ id: c.id, name: c.name }))
+    : [];
 
-  // --- Types (depuis API si dispo)
+  // 2) Normalisation des filtres reçus via l’URL
+  // - companyId prioritaire ; sinon on accepte `company` (nom) et on convertit → companyId
+  const rawCompanyId = String(searchParams.companyId ?? "").trim();
+  const rawCompanyName = String(searchParams.company ?? "").trim();
+  const companyId =
+    rawCompanyId ||
+    findCompanyIdByName(apiCompanies, rawCompanyName) ||
+    ""; // si pas trouvé: on n’envoie rien à l’API
+
+  // Profession: on accepte `profession` et quelques alias courants
+  const profession =
+    String(
+      searchParams.profession ??
+        searchParams.job ??
+        searchParams.role ??
+        searchParams.pro ??
+        ""
+    ).trim();
+
+  const paramsForJobs = {
+    q: String(searchParams.q ?? ""),
+    country: String(searchParams.country ?? searchParams.pays ?? ""),
+    type: String(searchParams.type ?? ""),
+    profession,
+    minExp: String(searchParams.minExp ?? searchParams.experience_min ?? ""),
+    companyId, // ← normalisé
+    sort: (searchParams.sort as any) ?? "date_desc",
+  };
+
+  // 3) Chargement des offres AVEC les filtres normalisés
+  const jobsRes = await (async () => {
+    try {
+      return await fetchJobs(paramsForJobs);
+    } catch {
+      return { items: [] as ApiJob[], total: 0, pinned: [] as ApiJob[] };
+    }
+  })();
+
+  const rawJobs: ApiJob[] = (jobsRes.items ?? []) as ApiJob[];
+
+  // Types
   const types =
     typesP.status === "fulfilled" && Array.isArray(typesP.value?.items)
-      ? typesP.value.items
+      ? (typesP.value.items as string[])
       : [];
 
-  // --- Professions (API si dispo, sinon déduction sur les jobs, sinon fallback par défaut)
+  // Professions (API → inférence → défaut)
   const apiProfessions =
     profsP.status === "fulfilled" && Array.isArray(profsP.value?.items)
       ? (profsP.value.items as string[])
@@ -145,22 +219,13 @@ export default async function JobsPage({
       ? inferredProfessions
       : DEFAULT_PROFESSIONS;
 
-  // --- Companies (API si dispo, sinon déduction sur les jobs)
-  const companiesRes =
-    companiesP.status === "fulfilled" ? companiesP.value : { items: [] as any[] };
-
-  const apiCompanies: CompanyOpt[] =
-    (companiesRes.items ?? []).map((c: any) => ({
-      id: c.id,
-      name: c.name,
-    })) ?? [];
-
+  // Entreprises (API → inférence si vide)
   const companies: CompanyOpt[] =
     apiCompanies.length > 0 ? apiCompanies : inferCompaniesFromJobs(rawJobs);
 
-  // ✅ bannière typée et sûre
+  // Bannière
   const banner: BannerRes | null =
-    bannerP.status === "fulfilled" ? (bannerP.value as BannerRes) : null;
+    bannerP.status === "fulfilled" ? bannerP.value : null;
 
   return (
     <div>
@@ -187,16 +252,21 @@ export default async function JobsPage({
           >
             Déposer mon CV
           </Link>
+          <Link
+            href="/offres-emploi/candidats"
+            className="inline-flex items-center rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-white"
+          >
+            Parcourir les CV (recruteurs)
+          </Link>
         </div>
       </Hero>
 
       <div className="mx-auto max-w-6xl px-4 py-10">
-        {/* Épinglées (si l’API en renvoie) */}
         {(jobsRes.pinned?.length ?? 0) > 0 && (
           <section className="mb-8">
             <h2 className="text-lg font-bold mb-3">Offres mises en avant</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {(jobsRes.pinned ?? []).map((j: ApiJob) => (
+              {(jobsRes.pinned as ApiJob[]).map((j) => (
                 <div key={j.id} className="ring-1 ring-amber-300 rounded-md p-1">
                   <JobCard job={toUiJob(j)} />
                 </div>
@@ -205,10 +275,9 @@ export default async function JobsPage({
           </section>
         )}
 
-        {/* Board principal */}
         <JobBoard
-          jobs={rawJobs.map(toUiJob) as any}
-          total={jobsRes.total}
+          jobs={(rawJobs.map(toUiJob) as unknown) as UiJob[]}
+          total={Number(jobsRes.total ?? 0)}
           companies={companies}
           professions={professions}
           types={types}

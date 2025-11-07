@@ -1,12 +1,11 @@
 // src/components/JobBoard.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import JobCard, { type Job } from "@/components/JobCard";
 
-export type CompanyOpt = { id:number; name:string };
-
-// NEW: type option pays (si fourni par le parent)
+export type CompanyOpt = { id: number | string; name: string };
 export type CountryOpt = { code: string; name: string };
 
 type Props = {
@@ -14,88 +13,89 @@ type Props = {
   total: number;
   companies?: CompanyOpt[];
   professions?: string[];
-  // NEW: listes dynamiques en props (optionnelles)
   types?: string[];
   countries?: CountryOpt[];
 };
 
-function uniqueSorted(values: (string | undefined)[]) {
-  return Array.from(new Set(values.filter(Boolean) as string[])).sort();
+/* ---------- helpers sûrs pour TS ---------- */
+const isNonEmpty = (v: unknown): v is string =>
+  typeof v === "string" && v.trim().length > 0;
+
+function uniqSortStr(arr: Array<string | null | undefined>): string[] {
+  const set = new Set<string>();
+  for (const v of arr) {
+    if (isNonEmpty(v)) set.add(v);
+  }
+  return Array.from(set).sort((a, b) =>
+    a.localeCompare(b, "fr", { sensitivity: "base" })
+  );
 }
 
 export default function JobBoard({
   jobs,
   total,
-  companies = [],
-  professions = [],
-  // NEW: props optionnelles pour listes de filtres
+  companies: companiesProp = [],
+  professions: professionsProp = [],
   types: typesProp = [],
   countries: countriesProp = [],
 }: Props) {
-  const [q, setQ] = useState("");
-  const [type, setType] = useState("");
-  const [country, setCountry] = useState("");
-  const [companyId, setCompanyId] = useState("");
-  const [profession, setProfession] = useState("");
-  const [minExp, setMinExp] = useState("");
-  const [sort, setSort] = useState<"date_desc" | "date_asc">("date_desc");
+  const r = useRouter();
+  const sp = useSearchParams();
 
-  // listes
-  // NEW: si 'types' est fourni en props, on l'utilise; sinon fallback depuis jobs
-  const types = useMemo(() => {
-    return typesProp.length
-      ? uniqueSorted(typesProp)
-      : uniqueSorted(jobs.map((j) => (j as any).type));
-  }, [typesProp, jobs]);
+  // URL = source de vérité
+  const q = sp.get("q") ?? "";
+  const country = sp.get("country") ?? "";
+  const type = sp.get("type") ?? "";
+  const profession = sp.get("profession") ?? "";
+  const companyId = sp.get("companyId") ?? "";
+  const minExp = sp.get("minExp") ?? "";
+  const sort = (sp.get("sort") === "date_asc" ? "date_asc" : "date_desc") as
+    | "date_desc"
+    | "date_asc";
 
-  // NEW: si 'countries' (objets) est fourni, on prend le .name; sinon fallback depuis jobs
-  const countries = useMemo(() => {
-    if (countriesProp.length) {
-      return uniqueSorted(countriesProp.map((c) => c.name));
-    }
-    return uniqueSorted(
-      jobs.map(
-        (j) =>
-          ((j as any).country as string) ||
-          (j as any).location?.split(",").pop()?.trim()
-      )
-    );
-  }, [countriesProp, jobs]);
+  // Listes affichées (bien typées)
+  const types = useMemo<string[]>(
+    () => uniqSortStr(typesProp),
+    [typesProp]
+  );
+
+  // On envoie le NOM du pays (pas le code) pour matcher le LIKE côté back
+  const countries = useMemo<string[]>(
+    () => uniqSortStr(countriesProp.map((c) => c?.name)),
+    [countriesProp]
+  );
+
+  const professions = useMemo<string[]>(
+    () => uniqSortStr(professionsProp),
+    [professionsProp]
+  );
+
+  const companies = useMemo<CompanyOpt[]>(
+    () =>
+      [...companiesProp].sort((a, b) =>
+        String(a?.name ?? "").localeCompare(String(b?.name ?? ""), "fr", {
+          sensitivity: "base",
+        })
+      ),
+    [companiesProp]
+  );
 
   const experienceSteps = ["0", "1", "2", "3", "5", "7", "10"];
 
-  // filtrage client (utile si tu passes un tableau déjà chargé)
-  const results = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    let arr = jobs.filter((j) => {
-      const hay = `${j.title} ${j.company ?? ""} ${(j as any).location ?? ""} ${(j as any).country ?? ""}`.toLowerCase();
-      const okQ = !needle || hay.includes(needle);
-      const okType = !type || (j as any).type === type;
-      const okCountry =
-        !country ||
-        ((j as any).country ?? (j as any).location ?? "")
-          .toLowerCase()
-          .includes(country.toLowerCase());
-      const okProfession =
-        !profession ||
-        ((j as any).profession ?? "").toLowerCase() === profession.toLowerCase();
-      const okCompany =
-        !companyId || String((j as any).company_id ?? "") === companyId;
-      const okMinExp =
-        !minExp || Number(((j as any).experienceMin ?? 0)) >= Number(minExp);
-      return (
-        okQ && okType && okCountry && okProfession && okCompany && okMinExp
-      );
-    });
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const next = new URLSearchParams();
 
-    arr = arr.sort((a, b) => {
-      const da = new Date((a as any).publishedAt || 0).getTime();
-      const db = new Date((b as any).publishedAt || 0).getTime();
-      return sort === "date_desc" ? db - da : da - db;
-    });
+    // NOMS de paramètres attendus par JobController@index
+    for (const [k, v] of fd.entries()) {
+      const val = String(v).trim();
+      if (val) next.set(k, val);
+    }
+    next.delete("page"); // au cas où
 
-    return arr;
-  }, [jobs, q, type, country, profession, companyId, minExp, sort]);
+    r.push(`/offres-emploi?${next.toString()}`);
+  }
 
   return (
     <div>
@@ -106,68 +106,71 @@ export default function JobBoard({
         </span>
       </div>
 
-      {/* Filtres */}
-      <div className="grid gap-3 md:grid-cols-6 mb-6">
-        <input
-          className="border rounded px-3 py-2 md:col-span-2"
-          placeholder="Rechercher (poste, société, ville…)"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <select
-          className="border rounded px-3 py-2"
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-        >
-          <option value="">Type</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <select
-          className="border rounded px-3 py-2"
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
-        >
-          <option value="">Pays</option>
-          {countries.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <select
-          className="border rounded px-3 py-2"
-          value={profession}
-          onChange={(e) => setProfession(e.target.value)}
-        >
-          <option value="">Profession</option>
-          {(professions || []).map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-        <select
-          className="border rounded px-3 py-2"
-          value={companyId}
-          onChange={(e) => setCompanyId(e.target.value)}
-        >
-          <option value="">Entreprise</option>
-          {(companies || []).map((c) => (
-            <option key={c.id} value={String(c.id)}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <div className="grid grid-cols-2 gap-2 md:col-span-2">
+      {/* Filtres -> soumission = navigation (URL) */}
+      <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-6 mb-6 items-end">
+        <div className="md:col-span-2">
+          <input
+            className="w-full border rounded px-3 py-2"
+            name="q"
+            defaultValue={q}
+            placeholder="Rechercher (poste, société, ville…)"
+          />
+        </div>
+
+        <div>
+          <select className="border rounded px-3 py-2" name="type" defaultValue={type}>
+            <option value="">Type</option>
+            {types.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <select className="border rounded px-3 py-2" name="country" defaultValue={country}>
+            <option value="">Pays</option>
+            {countries.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <select
             className="border rounded px-3 py-2"
-            value={minExp}
-            onChange={(e) => setMinExp(e.target.value)}
+            name="profession" // <- EXACT pour le back
+            defaultValue={profession}
           >
+            <option value="">Profession</option>
+            {professions.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <select
+            className="border rounded px-3 py-2"
+            name="companyId" // <- EXACT pour le back
+            defaultValue={companyId}
+          >
+            <option value="">Entreprise</option>
+            {companies.map((c) => (
+              <option key={String(c.id)} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 md:col-span-2">
+          <select className="border rounded px-3 py-2" name="minExp" defaultValue={minExp}>
             <option value="">Exp. min</option>
             {experienceSteps.map((y) => (
               <option key={y} value={y}>
@@ -175,22 +178,29 @@ export default function JobBoard({
               </option>
             ))}
           </select>
-          <select
-            className="border rounded px-3 py-2"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as any)}
-          >
+          <select className="border rounded px-3 py-2" name="sort" defaultValue={sort}>
             <option value="date_desc">Plus récentes</option>
             <option value="date_asc">Plus anciennes</option>
           </select>
         </div>
-      </div>
 
-      {/* Résultats */}
+        <div className="md:col-span-6">
+          <button className="rounded bg-blue-600 text-white px-4 py-2 font-semibold hover:bg-blue-700">
+            Filtrer
+          </button>
+        </div>
+      </form>
+
+      {/* Résultats (venus de la page via props) */}
       <div className="grid gap-4 md:grid-cols-2">
-        {results.map((job) => (
-          <JobCard key={job.id} job={job as any} />
+        {jobs.map((job) => (
+          <JobCard key={(job as any).id} job={job as any} />
         ))}
+        {!jobs.length && (
+          <div className="col-span-full rounded border p-6 text-center text-neutral-600">
+            Aucune offre ne correspond à vos critères.
+          </div>
+        )}
       </div>
     </div>
   );
