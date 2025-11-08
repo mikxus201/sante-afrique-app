@@ -40,7 +40,6 @@ function unescapeHtml(input: string): string {
       .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
       .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
 
-  // On tente jusqu'à 3 passes pour couvrir &amp;lt; → &lt; → <
   for (let i = 0; i < 3; i++) {
     const next = decodeOnce(out);
     if (next === out) break;
@@ -119,7 +118,7 @@ async function fetchAbout(noCache = false): Promise<CMSPage | null> {
     if (!res.ok) return null;
     const json = await res.json();
     const raw = (json?.content_html ?? "") as string;
-    const decoded = unescapeHtml(raw); // ⬅️ décode ici
+    const decoded = unescapeHtml(raw);
     return { title: json?.title ?? "Qui sommes-nous ?", content_html: decoded };
   } catch {
     return null;
@@ -147,6 +146,13 @@ export default async function TeamPage({
       )}`
     : null;
 
+  // 👇 Typage explicite pour éviter l’union 'string | Member[]'
+  const sections: [string, Member[]][] = [
+    ["Direction éditoriale", groups.direction],
+    ["Rédaction & Production", groups.redaction],
+    ["Conseil scientifique", groups.conseil],
+  ];
+
   return (
     <>
       <Hero
@@ -156,12 +162,11 @@ export default async function TeamPage({
         align="left"
       />
 
-      {/* === CONTENU CMS "Qui sommes-nous" (depuis le back-office) === */}
+      {/* === CONTENU CMS "Qui sommes-nous" === */}
       <section className="mx-auto max-w-4xl px-4 py-10">
         {about?.content_html ? (
           <article
             className="prose prose-neutral max-w-none"
-            // (optionnel) double filet de sécurité
             dangerouslySetInnerHTML={{ __html: unescapeHtml(about.content_html) }}
           />
         ) : (
@@ -173,16 +178,12 @@ export default async function TeamPage({
 
       {/* === ÉQUIPE === */}
       <div className="mx-auto max-w-6xl px-4 pb-10 grid gap-10">
-        {[
-          ["Direction éditoriale", groups.direction],
-          ["Rédaction & Production", groups.redaction],
-          ["Conseil scientifique", groups.conseil],
-        ].map(([title, list]) =>
+        {sections.map(([title, list]) =>
           Array.isArray(list) && list.length ? (
-            <section key={String(title)}>
+            <section key={title}>
               <h2 className="text-xl font-extrabold mb-3">{title}</h2>
               <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-5">
-                {list.map((m) => (
+                {list.map((m: Member) => (
                   <MemberCard key={m.id} m={m} />
                 ))}
               </div>
