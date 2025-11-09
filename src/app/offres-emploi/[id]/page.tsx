@@ -2,7 +2,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
+import { headers as nextHeaders } from "next/headers"; // ⬅️ alias
 import { absUrl } from "@/lib/site";
 import CompanyLogo from "@/components/CompanyLogo";
 
@@ -37,7 +37,9 @@ function toPlain(text?: string | null) {
 async function fetchJobServer(id: string | number): Promise<JobApiResponse> {
   const { API_PREFIX } = await import("@/lib/api");
   const base = API_PREFIX.replace(/\/+$/, "");
-  const cookie = headers().get("cookie") || "";
+
+  // ⬇️ headers() peut être typé Promise<ReadonlyHeaders> → on attend sa valeur
+  const cookie = (await nextHeaders()).get("cookie") ?? "";
 
   const res = await fetch(`${base}/jobs/${id}`, {
     method: "GET",
@@ -47,7 +49,6 @@ async function fetchJobServer(id: string | number): Promise<JobApiResponse> {
       "X-Requested-With": "XMLHttpRequest",
     },
     cache: "no-store",
-    credentials: "include",
     redirect: "manual",
   });
 
@@ -82,7 +83,7 @@ export async function generateMetadata(
     // silencieux: fallback sur défauts
   }
 
-  const image = absUrl(img || "/og/job-default.jpg"); // mets ce fichier dans /public/og/
+  const image = absUrl(img || "/og/job-default.jpg");
 
   return {
     title,
