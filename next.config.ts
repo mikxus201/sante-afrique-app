@@ -1,50 +1,63 @@
 // next.config.ts
 import type { NextConfig } from "next";
 
-/** Déduit (proto, host, port) depuis NEXT_PUBLIC_API_URL (avec ou sans /api) */
-function parseApiFromEnv() {
-  const raw = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/+$/, "");
-  if (!raw) return null;
+/** Nettoie /api en fin d’URL et les / en trop */
+function normalizeApi(url?: string) {
+  const raw = (url || "").trim().replace(/\/+$/, "");
+  return raw.replace(/\/api$/i, "");
+}
+
+const ROOT = normalizeApi(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+
+function parseForImages(u: string) {
   try {
-    const u = new URL(raw);
+    const x = new URL(u);
     return {
-      protocol: (u.protocol.replace(":", "") as "http" | "https"),
-      hostname: u.hostname,
-      port: u.port || (u.protocol === "https:" ? "443" : "80"),
+      protocol: x.protocol.replace(":", "") as "http" | "https",
+      hostname: x.hostname,
+      port: x.port || (x.protocol === "https:" ? "443" : "80"),
     };
   } catch {
-    return null;
+    return { protocol: "http" as const, hostname: "localhost", port: "8000" };
   }
 }
 
-const api = parseApiFromEnv();
+const apiHost = parseForImages(ROOT);
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+
   images: {
     remotePatterns: [
-      // DEV Laravel (uniquement localhost)
-      { protocol: "http", hostname: "localhost", port: "8000", pathname: "/storage/**" } as const,
-      { protocol: "http", hostname: "localhost", port: "8000", pathname: "/uploads/**" } as const,
+      // Hôte du back (staging/prod)
+      { protocol: apiHost.protocol, hostname: apiHost.hostname, port: apiHost.port, pathname: "/storage/**" },
+      { protocol: apiHost.protocol, hostname: apiHost.hostname, port: apiHost.port, pathname: "/uploads/**" },
 
-      // Hôte déduit de l'API (utile en PROD / staging)
-      ...(api
-        ? ([
-            { protocol: api.protocol, hostname: api.hostname, port: api.port, pathname: "/storage/**" } as const,
-            { protocol: api.protocol, hostname: api.hostname, port: api.port, pathname: "/uploads/**" } as const,
-          ] as const)
-        : []),
-
-      // Fallback CDN générique
-      { protocol: "https", hostname: "**", port: "", pathname: "/storage/**" } as const,
-      { protocol: "https", hostname: "**", port: "", pathname: "/uploads/**" } as const,
+      // Confort dev local
+      { protocol: "http", hostname: "localhost", port: "8000", pathname: "/**" },
+      { protocol: "http", hostname: "127.0.0.1", port: "8000", pathname: "/**" },
     ],
     formats: ["image/avif", "image/webp"],
   },
 
-  // Déploiement serein : on n’empêche pas le build si lint/TS râlent
+  // On ne bloque PAS le build en staging si ESLint/TS râlent
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
+
+  async rewrites() {
+    return [
+      // Proxy API & auth Laravel
+      { source: "/api/:path*", destination: `${ROOT}/api/:path*` },
+      { source: "/sanctum/:path*", destination: `${ROOT}/sanctum/:path*` },
+      { source: "/auth/:path*", destination: `${ROOT}/auth/:path*` },
+      { source: "/login", destination: `${ROOT}/login` },
+      { source: "/logout", destination: `${ROOT}/logout` },
+
+      // Accès direct aux assets du back depuis le front
+      { source: "/storage/:path*", destination: `${ROOT}/storage/:path*` },
+      { source: "/uploads/:path*", destination: `${ROOT}/uploads/:path*` },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -120,8 +120,9 @@ const inferCompaniesFromJobs = (jobs: ApiJob[]): CompanyOpt[] => {
     const name =
       (typeof j.company === "string" ? j.company : j.company?.name) ?? "";
     if (!name) continue;
-    const id = j.company_id ?? (typeof j.company === "object" && j.company?.id) ?? name;
-    const key = `${id}::${name}`;
+    const id = (j.company_id ?? (typeof j.company === "object" ? j.company?.id : undefined) ?? name) as string | number;
+    const key = `${String(id)}-${name}`;
+
     if (!map.has(key)) map.set(key, { id, name });
   }
   return Array.from(map.values()).sort((a, b) =>

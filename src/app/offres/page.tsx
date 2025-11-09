@@ -1,9 +1,14 @@
 // src/app/offres/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import JobBoard from "@/components/JobBoard";
 import type { Job } from "@/components/JobCard";
 import jobsData from "../../../data/jobs.json";
+
+// Si tu préfères forcer un rendu runtime (élimine tout risque de prerender), décommente :
+// export const dynamic = "force-dynamic";
+// export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Offres d’emploi | Santé Afrique",
@@ -28,7 +33,10 @@ export default function OffresPage() {
       </p>
 
       <div className="mt-6">
-        <JobBoard jobs={jobs} />
+        {/* ⬇️ Important : Suspense autour d’un composant qui utilise useSearchParams */}
+        <Suspense fallback={<div className="text-sm text-neutral-500">Chargement…</div>}>
+          <JobBoard jobs={jobs} />
+        </Suspense>
       </div>
     </div>
   );

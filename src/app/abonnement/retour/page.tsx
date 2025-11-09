@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 /** Helpers locaux : CSRF + soumission POST vers Laravel */
 function getCookie(name: string) {
@@ -9,19 +8,27 @@ function getCookie(name: string) {
   const m = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
   return m ? decodeURIComponent(m[2]) : null;
 }
+
 async function ensureCsrf() {
-  await fetch("/sanctum/csrf-cookie", { credentials: "include" });
+  const res = await fetch("/sanctum/csrf-cookie", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Initialisation CSRF échouée.");
 }
+
 function submitForm(action: string, data: Record<string, string>) {
   const form = document.createElement("form");
   form.method = "POST";
   form.action = action;
+
   const csrf = getCookie("XSRF-TOKEN") || "";
   const token = document.createElement("input");
   token.type = "hidden";
   token.name = "_token";
   token.value = csrf;
   form.appendChild(token);
+
   Object.entries(data).forEach(([k, v]) => {
     const i = document.createElement("input");
     i.type = "hidden";
@@ -29,41 +36,43 @@ function submitForm(action: string, data: Record<string, string>) {
     i.value = String(v ?? "");
     form.appendChild(i);
   });
+
   document.body.appendChild(form);
   form.submit();
 }
 
 export default function RedirectToCinetpay() {
-  const sp = useSearchParams();
   const [error, setError] = useState<string | null>(null);
-
-  const plan = useMemo(
-    () => ({
-      id: sp.get("plan_id"),
-      slug: sp.get("plan_slug"),
-    }),
-    [sp]
-  );
 
   useEffect(() => {
     (async () => {
-      if (!plan.id || !plan.slug) {
+      // 🔎 Lecture des query params 100% côté client (pas de useSearchParams)
+      const sp =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search)
+          : null;
+
+      const plan_id = sp?.get("plan_id");
+      const plan_slug = sp?.get("plan_slug");
+
+      if (!plan_id || !plan_slug) {
         setError("Paramètres de l’offre manquants.");
         return;
       }
+
       try {
-        // petit délai visuel puis POST vers Laravel -> redirection CinetPay
+        // Petit délai visuel puis POST vers Laravel -> redirection CinetPay
         await new Promise((r) => setTimeout(r, 600));
         await ensureCsrf();
         submitForm("/pay/cinetpay/start", {
-          plan_id: String(plan.id),
-          plan_slug: String(plan.slug),
+          plan_id,
+          plan_slug,
         });
       } catch (e: any) {
-        setError(e?.message ?? "Impossible d’initialiser le paiement.");
+        setError(e?.message ?? "Impossible d’initier le paiement.");
       }
     })();
-  }, [plan.id, plan.slug]);
+  }, []);
 
   return (
     <div className="mx-auto max-w-md text-center px-4 py-16 text-neutral-900 dark:text-neutral-100">
@@ -73,7 +82,8 @@ export default function RedirectToCinetpay() {
         {!error ? (
           <>
             <p className="text-sm text-neutral-600 dark:text-neutral-300 max-w-sm">
-              Merci de patienter, vous allez être redirigé vers la plateforme sécurisée CinetPay.
+              Merci de patienter, vous allez être redirigé vers la plateforme
+              sécurisée CinetPay.
             </p>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 italic">
               Ne fermez pas cette fenêtre.

@@ -10,7 +10,7 @@ export type CountryOpt = { code: string; name: string };
 
 type Props = {
   jobs: Job[];
-  total: number;
+  total?: number; // optionnel (fallback = jobs.length)
   companies?: CompanyOpt[];
   professions?: string[];
   types?: string[];
@@ -33,7 +33,7 @@ function uniqSortStr(arr: Array<string | null | undefined>): string[] {
 
 export default function JobBoard({
   jobs,
-  total,
+  total = jobs.length,
   companies: companiesProp = [],
   professions: professionsProp = [],
   types: typesProp = [],
@@ -53,13 +53,10 @@ export default function JobBoard({
     | "date_desc"
     | "date_asc";
 
-  // Listes affichées (bien typées)
-  const types = useMemo<string[]>(
-    () => uniqSortStr(typesProp),
-    [typesProp]
-  );
+  // Listes affichées
+  const types = useMemo<string[]>(() => uniqSortStr(typesProp), [typesProp]);
 
-  // On envoie le NOM du pays (pas le code) pour matcher le LIKE côté back
+  // On envoie le NOM du pays (pas le code)
   const countries = useMemo<string[]>(
     () => uniqSortStr(countriesProp.map((c) => c?.name)),
     [countriesProp]
@@ -93,7 +90,6 @@ export default function JobBoard({
       if (val) next.set(k, val);
     }
     next.delete("page"); // au cas où
-
     r.push(`/offres-emploi?${next.toString()}`);
   }
 
@@ -142,7 +138,7 @@ export default function JobBoard({
         <div>
           <select
             className="border rounded px-3 py-2"
-            name="profession" // <- EXACT pour le back
+            name="profession"
             defaultValue={profession}
           >
             <option value="">Profession</option>
@@ -157,7 +153,7 @@ export default function JobBoard({
         <div>
           <select
             className="border rounded px-3 py-2"
-            name="companyId" // <- EXACT pour le back
+            name="companyId"
             defaultValue={companyId}
           >
             <option value="">Entreprise</option>
@@ -191,7 +187,7 @@ export default function JobBoard({
         </div>
       </form>
 
-      {/* Résultats (venus de la page via props) */}
+      {/* Résultats */}
       <div className="grid gap-4 md:grid-cols-2">
         {jobs.map((job) => (
           <JobCard key={(job as any).id} job={job as any} />

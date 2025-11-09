@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { API_PREFIX } from "@/lib/api";
 import { FRANCOPHONE_COUNTRIES } from "@/lib/jobs";
 
@@ -49,8 +48,6 @@ const CONTRACT_TYPES = ["CDI", "CDD", "Stage", "Intérim", "Freelance / Consulta
 type Msg = { type: "ok" | "err"; text: string } | null;
 
 export default function CandidateSignupPage() {
-  const search = useSearchParams();
-
   // Liste de professions se terminant par "Autre"
   const PROF_OPTIONS = useMemo(() => [...HEALTH_PROFESSIONS_BASE, "Autre"], []);
 
@@ -80,9 +77,11 @@ export default function CandidateSignupPage() {
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // --- Pré-remplissage via ?profession=...
+  /* ---------- Pré-remplissage via ?profession=... (client-only, pas de Suspense requis) ---------- */
   useEffect(() => {
-    const raw = (search.get("profession") || "").trim();
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = (params.get("profession") || "").trim();
     if (!raw) return;
 
     const i = PROF_OPTIONS.findIndex((p) => p.toLowerCase() === raw.toLowerCase());
@@ -93,8 +92,7 @@ export default function CandidateSignupPage() {
       setForm((f) => ({ ...f, profession: "Autre" }));
       setOtherProfession(raw); // on propose la valeur reçue
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [PROF_OPTIONS]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -161,6 +159,8 @@ export default function CandidateSignupPage() {
         text: "Profil enregistré avec succès. Les recruteurs abonnés pourront consulter votre fiche.",
       });
       setCv(null);
+      // Option : reset partiel du formulaire
+      // setForm((f) => ({ ...f, skills: "", desired_type: "", availability: "Immédiate" }));
     } catch (_err) {
       setMsg({ type: "err", text: "Échec de l’enregistrement. Vérifiez le formulaire puis réessayez." });
     } finally {
@@ -195,20 +195,36 @@ export default function CandidateSignupPage() {
             <label className="block text-sm mb-1">
               Prénom <span className="text-red-600">*</span>
             </label>
-            <input className="w-full border rounded px-3 py-2" value={form.first_name} onChange={update("first_name")} />
+            <input
+              required
+              className="w-full border rounded px-3 py-2"
+              value={form.first_name}
+              onChange={update("first_name")}
+            />
           </div>
           <div>
             <label className="block text-sm mb-1">
               Nom <span className="text-red-600">*</span>
             </label>
-            <input className="w-full border rounded px-3 py-2" value={form.last_name} onChange={update("last_name")} />
+            <input
+              required
+              className="w-full border rounded px-3 py-2"
+              value={form.last_name}
+              onChange={update("last_name")}
+            />
           </div>
 
           <div>
             <label className="block text-sm mb-1">
               E-mail <span className="text-red-600">*</span>
             </label>
-            <input type="email" className="w-full border rounded px-3 py-2" value={form.email} onChange={update("email")} />
+            <input
+              required
+              type="email"
+              className="w-full border rounded px-3 py-2"
+              value={form.email}
+              onChange={update("email")}
+            />
           </div>
           <div>
             <label className="block text-sm mb-1">Téléphone (WhatsApp)</label>
@@ -220,23 +236,22 @@ export default function CandidateSignupPage() {
               Pays <span className="text-red-600">*</span>
             </label>
             <select
-             className="w-full border rounded px-3 py-2"
-             value={form.country}
-             onChange={update("country")}
-         >
-             <option value="">—</option>
-             {(FRANCOPHONE_COUNTRIES as any[]).map((item: any, idx: number) => {
-             const label =
-             typeof item === "string"
-             ? item
-             : item?.name ?? item?.label ?? item?.value ?? String(item);
-              return (
-             <option key={`${label}-${idx}`} value={label}>
-             {label}
-             </option>
-             );
-           })}
-         </select>
+              required
+              className="w-full border rounded px-3 py-2"
+              value={form.country}
+              onChange={update("country")}
+            >
+              <option value="">—</option>
+              {(FRANCOPHONE_COUNTRIES as any[]).map((item: any, idx: number) => {
+                const label =
+                  typeof item === "string" ? item : item?.name ?? item?.label ?? item?.value ?? String(item);
+                return (
+                  <option key={`${label}-${idx}`} value={label}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
           </div>
           <div>
             <label className="block text-sm mb-1">Ville</label>
@@ -247,8 +262,13 @@ export default function CandidateSignupPage() {
             <label className="block text-sm mb-1">
               Profession <span className="text-red-600">*</span>
             </label>
-            <select className="w-full border rounded px-3 py-2" value={form.profession} onChange={update("profession")}>
-              <option value=""> Sélectionnez votre profession </option>
+            <select
+              required
+              className="w-full border rounded px-3 py-2"
+              value={form.profession}
+              onChange={update("profession")}
+            >
+              <option value="">Sélectionnez votre profession</option>
               {PROF_OPTIONS.map((p) => (
                 <option key={p} value={p}>
                   {p}
@@ -264,6 +284,7 @@ export default function CandidateSignupPage() {
                 Précisez votre profession <span className="text-red-600">*</span>
               </label>
               <input
+                required
                 className="w-full border rounded px-3 py-2"
                 value={otherProfession}
                 onChange={(e) => setOtherProfession(e.target.value)}

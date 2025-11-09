@@ -1,28 +1,22 @@
+// src/app/interviews/[slug]/page.tsx
 import ArticlePage, {
   generateMetadata as baseGenerateMetadata,
 } from "../../articles/[slug]/page";
 
-// --- CONFIG PAR DOSSIER ---
-const ALIAS = "interviews";
-const CATEGORY_MATCH = ALIAS.replace(/s$/i, "").toLowerCase(); // "interviews" -> "interview"
-
-// On garde exactement les mêmes metadata que la page article
+// Garde les mêmes metadata que la page article
 export const generateMetadata = baseGenerateMetadata;
+// Revalidation statique (OK Next 15)
+export const revalidate = 60;
 
-// ✅ Exports statiques conformes Next 15
-export const dynamic: "auto" | "force-static" | "force-dynamic" | "error" = "auto";
-export const dynamicParams = true;
-export const revalidate: number | false = 60;
-
-// ===== Helpers API =====
+/* ===== Helpers API ===== */
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
 const apiRoot = () =>
   trimSlash(
     (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api$/i, "")
   );
-const apiUrl = (p: string) =>
-  `${apiRoot()}/api${p.startsWith("/") ? "" : "/"}${p}`;
+const apiUrl = (p: string) => `${apiRoot()}/api${p.startsWith("/") ? "" : "/"}${p}`;
 
+// Récupère un libellé de catégorie (string/objet/tableau)
 function pickCategory(a: any): string {
   const src =
     a?.category ??
@@ -53,7 +47,10 @@ function pickCategory(a: any): string {
   return toText(src);
 }
 
-// ===== Pré-render statique ciblé par catégorie =====
+// On matche par catégorie "interview"
+const CATEGORY_MATCH = "interview";
+
+/* ===== Pré-render statique ciblé par catégorie ===== */
 export async function generateStaticParams() {
   try {
     const url = apiUrl("/articles?perPage=200");
@@ -75,7 +72,7 @@ export async function generateStaticParams() {
   }
 }
 
-// ===== Page : proxy vers la page article =====
+/* ===== Page : délègue le rendu à la page article ===== */
 export default async function CategoryArticleProxy({
   params,
 }: {
